@@ -1,3 +1,4 @@
+#include <cassert>
 #include <errno.h>
 #include <netinet/ip.h>
 #include <stdio.h>
@@ -5,6 +6,8 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+const size_t MAX_MSG_LENGTH = 4098; // 4 bytes
 
 /*
 struct sockaddr_in {
@@ -30,24 +33,82 @@ void report_error(const char *msg) {
     abort();
 }
 
-void process(int tcp_connection) {
-    char rbuffer[64] = {};
+int32_t read_n(int tcp_connection, char *rbuffer, size_t n) {
+    while (n > 0) {
+        ssize_t ret_val = read(tcp_connection, rbuffer, n);
+        if (ret_val <= 0) { // error or EOF
+            return -1;
+        }
 
-    ssize_t ret_val = read(tcp_connection, rbuffer, sizeof(rbuffer) - 1);
+        assert((size_t)ret_val <= n);
 
-    if (ret_val < 0) {
-        alert("read(): error");
-        return;
+        n -= ret_val;
+
+        rbuffer += ret_val; // move the buffer pointer
     }
 
-    printf("client says: %s\n", rbuffer);
+    return 0;
+}
 
-    char wbuffer[] = "world";
+int32_t write_n(int tcp_connection, const char *wbuffer, size_t n) {
+    while (n > 0) {
+        ssize_t ret_val = write(tcp_connection, wbuffer, n);
+        if (ret_val <= 0) { // error or EOF
+            return -1;
+        }
 
-    ret_val = write(tcp_connection, wbuffer, strlen(wbuffer));
+        assert((size_t)ret_val <= n);
+
+        n -= ret_val;
+
+        wbuffer += ret_val; // move the buffer pointer
+    }
+
+    return 0;
+}
+
+int32_t process_one_req(int tcp_connection) {
+    // 4 bytes message length + up to 4096 bytes payload
+    char rbuffer[4 + MAX_MSG_LENGTH] = {};
+
+    errno = 0;
+    // read first 4 bytes, message length
+    ssize_t ret_val = read_n(tcp_connection, rbuffer, 4);
+    if (ret_val) {
+        alert(errno == 0 ? "EOF" : "read(): error");
+        return ret_val;
+    }
+
+    // read message length, first 4 bytes
+    uint32_t len = 0;
+    memcpy(&len, rbuffer, 4);
+    if (len > MAX_MSG_LENGTH) {
+        alert("payload is too long");
+        return -1;
+    }
+
+    // read the request payload
+    ret_val = read_n(tcp_connection, rbuffer + 4, len);
+    if (ret_val) {
+        alert(errno == 0 ? "EOF" : "read(): error");
+        return ret_val;
+    }
+
+    // TODO: process the request
+    printf("client says: %.*s\n", len, &rbuffer[4]);
+
+    const char reply[] = "world";
+    char wbuffer[4 + sizeof(reply)];
+
+    len = (uint32_t)strlen(reply);
+    memcpy(wbuffer, &len, 4); // first 4 bytes of wbuffer contains the msg len
+    memcpy(&wbuffer[4], reply, len);
+
+    ret_val = write_n(tcp_connection, wbuffer, 4 + len);
     if (ret_val < 0) {
         report_error("write()");
     }
+    return ret_val;
 }
 
 int main() {
@@ -84,13 +145,18 @@ int main() {
         struct sockaddr_in client_address = {};
         socklen_t addrlen = sizeof(client_address);
 
+        // accept() blocks until a client connects
         int client_socket = accept(server_socket, (struct sockaddr *)&client_address, &addrlen);
-
         if (client_socket < 0) { // connection failed
             continue;
         }
 
-        process(client_socket);
+        while (true) {
+            int32_t err = process_one_req(client_socket);
+            if (err) {
+                break;
+            }
+        }
 
         close(client_socket);
     }

@@ -1,11 +1,12 @@
 CPPFLAGS = -Wall -Wextra -O2 -g
 
-run: clean a
+all: server client
 
-a: server.o client.o
-	@g++ $(CPPFLAGS) server.o -o a
-	@g++ $(CPPFLAGS) client.o -o a
-	@chmod +x a
+server: server.o
+	@g++ $(CPPFLAGS) server.o -o server
+
+client: client.o
+	@g++ $(CPPFLAGS) client.o -o client
 
 server.o: server.cpp
 	@g++ $(CPPFLAGS) -c server.cpp
@@ -14,4 +15,4 @@ client.o: client.cpp
 	@g++ $(CPPFLAGS) -c client.cpp
 
 clean:
-	@rm -f *.o a
+	@rm -f server client server.o client.o
