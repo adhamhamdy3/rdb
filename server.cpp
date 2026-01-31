@@ -34,37 +34,42 @@ void report_error(const char *msg) {
 }
 
 int32_t read_n(int tcp_connection, char *rbuffer, size_t n) {
-    while (n > 0) {
-        ssize_t ret_val = read(tcp_connection, rbuffer, n);
-        if (ret_val <= 0) { // error or EOF
+    int32_t total_read = 0;
+
+    while (total_read < n) {
+        ssize_t ret_val = read(tcp_connection, rbuffer + total_read, n - total_read);
+
+        if (ret_val > 0) {
+            total_read += ret_val;
+        } else if (ret_val == 0) { // EOF
+            return total_read;
+        } else { // error
+            if (errno == EINTR)
+                continue; // retry
             return -1;
         }
-
-        assert((size_t)ret_val <= n);
-
-        n -= ret_val;
-
-        rbuffer += ret_val; // move the buffer pointer
     }
 
-    return 0;
+    return total_read;
 }
 
 int32_t write_n(int tcp_connection, const char *wbuffer, size_t n) {
-    while (n > 0) {
-        ssize_t ret_val = write(tcp_connection, wbuffer, n);
-        if (ret_val <= 0) { // error or EOF
+    int32_t total_write = 0;
+
+    while (total_write < n) {
+        ssize_t ret_val = write(tcp_connection, wbuffer + total_write, n - total_write);
+        if (ret_val > 0) { // error or EOF
+            total_write += ret_val;
+        } else if (ret_val == 0) {
+            return total_write;
+        } else {
+            if (errno == EINTR)
+                continue;
             return -1;
         }
-
-        assert((size_t)ret_val <= n);
-
-        n -= ret_val;
-
-        wbuffer += ret_val; // move the buffer pointer
     }
 
-    return 0;
+    return total_write;
 }
 
 int32_t process_one_req(int tcp_connection) {
@@ -74,9 +79,9 @@ int32_t process_one_req(int tcp_connection) {
     errno = 0;
     // read first 4 bytes, message length
     ssize_t ret_val = read_n(tcp_connection, rbuffer, 4);
-    if (ret_val) {
+    if (ret_val != 4) {
         alert(errno == 0 ? "EOF" : "read(): error");
-        return ret_val;
+        return -1;
     }
 
     // read message length, first 4 bytes
@@ -89,9 +94,9 @@ int32_t process_one_req(int tcp_connection) {
 
     // read the request payload
     ret_val = read_n(tcp_connection, rbuffer + 4, len);
-    if (ret_val) {
+    if (ret_val != len) {
         alert(errno == 0 ? "EOF" : "read(): error");
-        return ret_val;
+        return -1;
     }
 
     // TODO: process the request
@@ -108,7 +113,8 @@ int32_t process_one_req(int tcp_connection) {
     if (ret_val < 0) {
         report_error("write()");
     }
-    return ret_val;
+
+    return 0;
 }
 
 int main() {
