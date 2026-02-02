@@ -1,13 +1,15 @@
 #include <cassert>
 #include <errno.h>
 #include <netinet/ip.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <vector>
 
-const size_t MAX_MSG_LENGTH = 4098; // 4 bytes
+const size_t MAX_MSG_LENGTH = 4098; // 4098 bytes
 
 /*
 struct sockaddr_in {
@@ -22,6 +24,26 @@ struct in_addr {
   uint32_t s_addr;  // ip address
 };
 */
+
+/*
+struct pollfd {
+  int fd;
+
+  int events;   // requested flags: POLLIN, POLLOUT, and POLLERR
+  int revents;  // returned allowed events: you can read/write
+};
+*/
+
+struct connection_state {
+    int tcp_socekt = -1;
+
+    bool want_read = false;
+    bool want_write = false;
+    bool want_close = false;
+
+    std::vector<int32_t> incoming; // incoming data for the application logic to process
+    std::vector<int32_t> outgoing; // outgoing data from the application logic
+};
 
 void alert(const char *msg) {
     fprintf(stderr, "%s\n", msg);
@@ -117,6 +139,21 @@ int32_t process_one_req(int tcp_connection) {
     return 0;
 }
 
+connection_state *handle_accept(int tcp_socket) {
+    // TODO:
+    return nullptr;
+}
+
+int handle_read(connection_state *conn) {
+    // TODO:
+    return 0;
+}
+
+int handle_write(connection_state *conn) {
+    // TODO:
+    return 0;
+}
+
 int main() {
     // create tcp socket
     int server_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -146,25 +183,75 @@ int main() {
         report_error("listen()");
     }
 
-    // accept connections
-    while (true) {
-        struct sockaddr_in client_address = {};
-        socklen_t addrlen = sizeof(client_address);
+    // this maps each socket to its connection state
+    /// fds (sockets) on unix are allocated to the smallest available non-negative integer
+    /// so mapping using simple arrays could not be more efficient
+    std::vector<connection_state *> conn_state_map;
 
-        // accept() blocks until a client connects
-        int client_socket = accept(server_socket, (struct sockaddr *)&client_address, &addrlen);
-        if (client_socket < 0) { // connection failed
-            continue;
+    std::vector<struct pollfd> sockets_list;
+
+    // event loop
+    // accept connections
+    /// rebuild the sockets list every iteration based on the application logic's intent read/write/error
+    while (true) {
+        sockets_list.clear();
+
+        struct pollfd socket = {server_socket, POLLIN, 0}; // index 0: listening socket, non-blocking accpet()
+        sockets_list.push_back(socket);
+
+        for (connection_state *conn : conn_state_map) {
+            struct pollfd socket = {conn->tcp_socekt, POLLERR, 0}; // always wake up if error happened
+
+            if (conn->want_read) {
+                socket.events |= POLLIN;
+            }
+            if (conn->want_write) {
+                socket.events |= POLLOUT;
+            }
+
+            sockets_list.push_back(socket);
         }
 
-        while (true) {
-            int32_t err = process_one_req(client_socket);
-            if (err) {
-                break;
+        /// blocking - check all sockets receive/send buffers or TCP errors
+        int ret_val = poll(sockets_list.data(), sockets_list.size(), -1);
+        if (ret_val < -1 && errno == EINTR) { // nothing is ready rn
+            continue;
+        }
+        if (ret_val < -1) {
+            report_error("poll()");
+        }
+
+        if (sockets_list[0].revents & POLLIN) {
+            int listening_socket = sockets_list[0].fd;
+
+            connection_state *conn = handle_accept(listening_socket);
+            if (conn) {
+                if (conn_state_map.size() <= (size_t)listening_socket) {
+                    conn_state_map.resize(listening_socket + 1);
+                }
+                conn_state_map[listening_socket] = conn;
             }
         }
 
-        close(client_socket);
+        // handle connection socket
+        for (size_t i = 1; i < sockets_list.size(); i++) {
+            connection_state *conn = conn_state_map[sockets_list[i].fd];
+            uint32_t revents = sockets_list[i].revents;
+
+            if (revents & POLLIN) {
+                handle_read(conn);
+            }
+
+            if (revents & POLLOUT) {
+                handle_write(conn);
+            }
+
+            if (revents & POLLERR || conn->want_close) {
+                close(conn->tcp_socekt);
+                conn_state_map[conn->tcp_socekt] = nullptr;
+                delete conn;
+            }
+        }
     }
 
     return 0;
