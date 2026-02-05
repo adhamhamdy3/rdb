@@ -1,5 +1,6 @@
 #include <cassert>
 #include <errno.h>
+#include <fcntl.h>
 #include <netinet/ip.h>
 #include <poll.h>
 #include <stdio.h>
@@ -9,7 +10,7 @@
 #include <unistd.h>
 #include <vector>
 
-const size_t MAX_MSG_LENGTH = 4098; // 4098 bytes
+size_t const MAX_MSG_LENGTH = 4098; // 4098 bytes
 
 /*
 struct sockaddr_in {
@@ -45,17 +46,25 @@ struct connection_state {
     std::vector<int32_t> outgoing; // outgoing data from the application logic
 };
 
-void alert(const char *msg) {
+void alert(char const* msg)
+{
     fprintf(stderr, "%s\n", msg);
 }
 
-void report_error(const char *msg) {
+void log_error(char const* msg)
+{
     int err = errno;
     fprintf(stderr, "[%d] %s\n", err, msg);
     abort();
 }
 
-int32_t read_n(int tcp_connection, char *rbuffer, size_t n) {
+void sokcet_set_nb(int socket)
+{
+    fcntl(socket, F_SETFL, fcntl(socket, F_GETFL, 0) | O_NONBLOCK);
+}
+
+int32_t read_n(int tcp_connection, char* rbuffer, size_t n)
+{
     int32_t total_read = 0;
 
     while (total_read < n) {
@@ -75,7 +84,8 @@ int32_t read_n(int tcp_connection, char *rbuffer, size_t n) {
     return total_read;
 }
 
-int32_t write_n(int tcp_connection, const char *wbuffer, size_t n) {
+int32_t write_n(int tcp_connection, char const* wbuffer, size_t n)
+{
     int32_t total_write = 0;
 
     while (total_write < n) {
@@ -94,7 +104,8 @@ int32_t write_n(int tcp_connection, const char *wbuffer, size_t n) {
     return total_write;
 }
 
-int32_t process_one_req(int tcp_connection) {
+int32_t process_one_req(int tcp_connection)
+{
     // 4 bytes message length + up to 4096 bytes payload
     char rbuffer[4 + MAX_MSG_LENGTH] = {};
 
@@ -124,7 +135,7 @@ int32_t process_one_req(int tcp_connection) {
     // TODO: process the request
     printf("client says: %.*s\n", len, &rbuffer[4]);
 
-    const char reply[] = "world";
+    char const reply[] = "world";
     char wbuffer[4 + sizeof(reply)];
 
     len = (uint32_t)strlen(reply);
@@ -133,32 +144,36 @@ int32_t process_one_req(int tcp_connection) {
 
     ret_val = write_n(tcp_connection, wbuffer, 4 + len);
     if (ret_val < 0) {
-        report_error("write()");
+        log_error("write()");
     }
 
     return 0;
 }
 
-connection_state *handle_accept(int tcp_socket) {
+connection_state* handle_accept(int tcp_socket)
+{
     // TODO:
     return nullptr;
 }
 
-int handle_read(connection_state *conn) {
+int handle_read(connection_state* conn)
+{
     // TODO:
     return 0;
 }
 
-int handle_write(connection_state *conn) {
+int handle_write(connection_state* conn)
+{
     // TODO:
     return 0;
 }
 
-int main() {
+int main()
+{
     // create tcp socket
     int server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket < 0) {
-        report_error("socket()");
+        log_error("socket()");
     }
 
     int reuse_option = 1;
@@ -172,21 +187,24 @@ int main() {
     server_address.sin_port = htons(1234);
     server_address.sin_addr.s_addr = htonl(0); // IP 0.0.0.0
 
-    int result_value = bind(server_socket, (const struct sockaddr *)&server_address, sizeof(server_address));
+    int result_value = bind(server_socket, (const struct sockaddr*)&server_address, sizeof(server_address));
     if (result_value) {
-        report_error("bind()");
+        log_error("bind()");
     }
+
+    // set server socket to non-blocking mode
+    sokcet_set_nb(server_socket);
 
     // listen
     result_value = listen(server_socket, SOMAXCONN); // SOMAXCONN: size of the queue
     if (result_value) {
-        report_error("listen()");
+        log_error("listen()");
     }
 
     // this maps each socket to its connection state
     /// fds (sockets) on unix are allocated to the smallest available non-negative integer
     /// so mapping using simple arrays could not be more efficient
-    std::vector<connection_state *> conn_state_map;
+    std::vector<connection_state*> conn_state_map;
 
     std::vector<struct pollfd> sockets_list;
 
@@ -196,11 +214,11 @@ int main() {
     while (true) {
         sockets_list.clear();
 
-        struct pollfd socket = {server_socket, POLLIN, 0}; // index 0: listening socket, non-blocking accpet()
+        struct pollfd socket = { server_socket, POLLIN, 0 }; // index 0: listening socket, non-blocking accpet()
         sockets_list.push_back(socket);
 
-        for (connection_state *conn : conn_state_map) {
-            struct pollfd socket = {conn->tcp_socekt, POLLERR, 0}; // always wake up if error happened
+        for (connection_state* conn : conn_state_map) {
+            struct pollfd socket = { conn->tcp_socekt, POLLERR, 0 }; // always wake up if error happened
 
             if (conn->want_read) {
                 socket.events |= POLLIN;
@@ -218,13 +236,13 @@ int main() {
             continue;
         }
         if (ret_val < -1) {
-            report_error("poll()");
+            log_error("poll()");
         }
 
         if (sockets_list[0].revents & POLLIN) {
             int listening_socket = sockets_list[0].fd;
 
-            connection_state *conn = handle_accept(listening_socket);
+            connection_state* conn = handle_accept(listening_socket);
             if (conn) {
                 if (conn_state_map.size() <= (size_t)listening_socket) {
                     conn_state_map.resize(listening_socket + 1);
@@ -235,7 +253,7 @@ int main() {
 
         // handle connection socket
         for (size_t i = 1; i < sockets_list.size(); i++) {
-            connection_state *conn = conn_state_map[sockets_list[i].fd];
+            connection_state* conn = conn_state_map[sockets_list[i].fd];
             uint32_t revents = sockets_list[i].revents;
 
             if (revents & POLLIN) {

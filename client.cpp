@@ -7,19 +7,22 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-const size_t MAX_MSG_LENGTH = 4098; // 4 bytes
+size_t const MAX_MSG_LENGTH = 4098; // 4 bytes
 
-void alert(const char *msg) {
+void alert(char const* msg)
+{
     fprintf(stderr, "%s\n", msg);
 }
 
-void report_error(const char *msg) {
+void report_error(char const* msg)
+{
     int err = errno;
     fprintf(stderr, "[%d] %s\n", err, msg);
     abort();
 }
 
-int32_t read_n(int tcp_connection, char *rbuffer, size_t n) {
+int32_t read_n(int tcp_connection, char* rbuffer, size_t n)
+{
     int32_t total_read = 0;
 
     while (total_read < n) {
@@ -39,7 +42,8 @@ int32_t read_n(int tcp_connection, char *rbuffer, size_t n) {
     return total_read;
 }
 
-int32_t write_n(int tcp_connection, const char *wbuffer, size_t n) {
+int32_t write_n(int tcp_connection, char const* wbuffer, size_t n)
+{
     int32_t total_write = 0;
 
     while (total_write < n) {
@@ -58,7 +62,8 @@ int32_t write_n(int tcp_connection, const char *wbuffer, size_t n) {
     return total_write;
 }
 
-int32_t send_request(int tcp_connection, const char *data) {
+int32_t send_request(int tcp_connection, char const* data)
+{
     uint32_t len = (uint32_t)strlen(data);
     if (len > MAX_MSG_LENGTH) {
         return -1;
@@ -78,7 +83,8 @@ int32_t send_request(int tcp_connection, const char *data) {
     return ret_val;
 }
 
-int32_t recv_response(int tcp_connection) {
+int32_t recv_response(int tcp_connection)
+{
     char rbuffer[4 + MAX_MSG_LENGTH];
 
     errno = 0;
@@ -105,7 +111,8 @@ int32_t recv_response(int tcp_connection) {
     return 0;
 }
 
-int main() {
+int main()
+{
     // create tcp socket
     int client_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (client_socket < 0) {
@@ -118,7 +125,7 @@ int main() {
     server_address.sin_port = ntohs(1234);
     server_address.sin_addr.s_addr = ntohl(INADDR_LOOPBACK); // loopback ip address: 127.0.0.1
 
-    int result_value = connect(client_socket, (const struct sockaddr *)&server_address, sizeof(server_address));
+    int result_value = connect(client_socket, (const struct sockaddr*)&server_address, sizeof(server_address));
     if (result_value) {
         report_error("connect()");
     }
