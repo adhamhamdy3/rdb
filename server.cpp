@@ -36,14 +36,14 @@ struct pollfd {
 */
 
 struct connection_state {
-    int tcp_socekt = -1;
+    int tcp_socket = -1;
 
     bool want_read = false;
     bool want_write = false;
     bool want_close = false;
 
-    std::vector<int8_t> incoming; // incoming data for the application logic to process
-    std::vector<int8_t> outgoing; // outgoing data from the application logic to send
+    std::vector<uint8_t> incoming; // incoming data for the application logic to process
+    std::vector<uint8_t> outgoing; // outgoing data from the application logic to send
 };
 
 void alert(char const* msg)
@@ -58,16 +58,16 @@ void log_error(char const* msg)
     abort();
 }
 
-void buffer_append(std::vector<int8_t>& buffer, int8_t const* data, size_t len)
+void buffer_append(std::vector<uint8_t>& buffer, uint8_t const* data, size_t len)
 {
     // append to back
     buffer.insert(buffer.end(), data, data + len);
 }
 
-void buffer_consume(std::vector<int8_t>& buffer, size_t len)
+void buffer_consume(std::vector<uint8_t>& buffer, size_t len)
 {
     // remove from front
-    buffer.erase(buffer.begin() + len);
+    buffer.erase(buffer.begin(), buffer.begin() + len);
 }
 
 void socket_set_nb(int socket)
@@ -99,14 +99,14 @@ bool try_one_request(connection_state* conn)
         return false;
     }
 
-    int8_t* request = &conn->incoming[4];
+    uint8_t* request = &conn->incoming[4];
 
     // TODO: process the request
     printf("client says: len:%d data:%.*s\n",
         len, len < 100 ? len : 100, request);
 
     // send the response to outgoing buffer
-    buffer_append(conn->outgoing, (int8_t const*)&len, 4);
+    buffer_append(conn->outgoing, (uint8_t const*)&len, 4);
     buffer_append(conn->outgoing, request, len);
 
     // remove the message from the incoming buffer
@@ -135,7 +135,7 @@ connection_state* handle_accept(int tcp_socket)
 
     // create connection state for this socket
     connection_state* conn = new connection_state();
-    conn->tcp_socekt = connection_socket;
+    conn->tcp_socket = connection_socket;
     conn->want_read = true; // read the first request
 
     return conn;
@@ -146,7 +146,7 @@ void handle_write(connection_state* conn)
 {
     assert(conn->outgoing.size() > 0);
 
-    int ret_val = write(conn->tcp_socekt, conn->outgoing.data(), conn->outgoing.size());
+    int ret_val = write(conn->tcp_socket, conn->outgoing.data(), conn->outgoing.size());
     if (ret_val < 0 && errno == EAGAIN) {
         return; // not ready
     }
@@ -170,8 +170,8 @@ void handle_write(connection_state* conn)
 // app logic when socket is readable
 void handle_read(connection_state* conn)
 {
-    int8_t buffer[64 * 1024];
-    ssize_t ret_val = read(conn->tcp_socekt, buffer, sizeof(buffer));
+    uint8_t buffer[64 * 1024];
+    ssize_t ret_val = read(conn->tcp_socket, buffer, sizeof(buffer));
     if (ret_val < 0 && errno == EAGAIN) {
         return; // not ready
     }
@@ -242,6 +242,8 @@ int main()
         log_error("listen()");
     }
 
+    alert("server is listening...");
+
     // this maps each socket to its connection state
     /// fds (sockets) on unix are allocated to the smallest available non-negative integer
     /// so mapping using simple arrays could not be more efficient
@@ -255,7 +257,7 @@ int main()
     while (true) {
         sockets_list.clear();
 
-        struct pollfd socket = { server_socket, POLLIN, 0 }; // index 0: listening socket, non-blocking accpet()
+        struct pollfd socket = { server_socket, POLLIN, 0 }; // index 0: listening socket, non-blocking accept()
         sockets_list.push_back(socket);
 
         for (connection_state* conn : conn_state_map) {
@@ -263,7 +265,7 @@ int main()
                 continue;
             }
 
-            struct pollfd socket = { conn->tcp_socekt, POLLERR, 0 }; // always wake up if error happened
+            struct pollfd socket = { conn->tcp_socket, POLLERR, 0 }; // always wake up if error happened
 
             if (conn->want_read) {
                 socket.events |= POLLIN;
@@ -289,11 +291,11 @@ int main()
 
             connection_state* conn = handle_accept(listening_socket);
             if (conn) {
-                if (conn_state_map.size() <= (size_t)conn->tcp_socekt) {
-                    conn_state_map.resize(conn->tcp_socekt + 1, nullptr);
+                if (conn_state_map.size() <= (size_t)conn->tcp_socket) {
+                    conn_state_map.resize(conn->tcp_socket + 1, nullptr);
                 }
-                assert(!conn_state_map[conn->tcp_socekt]);
-                conn_state_map[conn->tcp_socekt] = conn;
+                assert(!conn_state_map[conn->tcp_socket]);
+                conn_state_map[conn->tcp_socket] = conn;
             }
         }
 
@@ -317,8 +319,8 @@ int main()
             }
 
             if ((revents & POLLERR) || conn->want_close) {
-                close(conn->tcp_socekt);
-                conn_state_map[conn->tcp_socekt] = nullptr;
+                close(conn->tcp_socket);
+                conn_state_map[conn->tcp_socket] = nullptr;
                 delete conn;
             }
         }
