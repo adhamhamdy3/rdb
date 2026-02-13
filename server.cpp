@@ -6,11 +6,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <vector>
 
 size_t const MAX_MSG_LENGTH = (32 << 20);
+size_t const MAX_ARGS = 200 * 1000;
 
 /*
 struct sockaddr_in {
@@ -46,6 +48,11 @@ struct connection_state {
     std::vector<uint8_t> outgoing; // outgoing data from the application logic to send
 };
 
+struct Response {
+    uint32_t status = 0;
+    std::vector<uint8_t> data;
+};
+
 void alert(char const* msg)
 {
     fprintf(stderr, "%s\n", msg);
@@ -70,6 +77,30 @@ void buffer_consume(std::vector<uint8_t>& buffer, size_t len)
     buffer.erase(buffer.begin(), buffer.begin() + len);
 }
 
+bool read_u32(uint8_t const*& cur, uint8_t const* end, uint32_t& out)
+{
+    if (cur + 4 > end) {
+        return false;
+    }
+
+    memcpy(&out, cur, 4);
+    cur += 4;
+
+    return true;
+}
+
+bool read_str(uint8_t const*& cur, uint8_t const* end, uint32_t len, std::string& str)
+{
+    if (cur + len > end) {
+        return false;
+    }
+
+    str.assign(cur, cur + len);
+    cur += len;
+
+    return true;
+}
+
 void socket_set_nb(int socket)
 {
     int flags = fcntl(socket, F_GETFL, 0);
@@ -79,6 +110,50 @@ void socket_set_nb(int socket)
     fcntl(socket, F_SETFL, flags);
 }
 
+uint32_t parse_req(uint8_t const* request, uint32_t size, std::vector<std::string>& command)
+{
+    uint8_t const* end = request + size;
+    uint32_t nstr = 0;
+
+    if (!read_u32(request, end, nstr)) {
+        return -1;
+    }
+
+    if (nstr > MAX_ARGS) {
+        return -1;
+    }
+
+    while (command.size() < nstr) {
+        uint32_t len = 0;
+        if (!read_u32(request, end, len)) {
+            return -1;
+        }
+
+        command.push_back(std::string());
+        if (!read_str(request, end, len, command.back())) {
+            return -1;
+        }
+    }
+    if (request != end) {
+        return -1;
+    }
+
+    return 0;
+}
+
+void process_command(std::vector<std::string>& command, Response& resp)
+{
+    // TODO: process the command
+}
+
+void make_response(Response const& resp, std::vector<uint8_t>& outgoing)
+{
+    uint32_t resp_len = (uint32_t)4 + resp.data.size();
+    buffer_append(outgoing, (uint8_t const*)resp_len, 4);
+    buffer_append(outgoing, (uint8_t const*)resp.status, 4);
+    buffer_append(outgoing, resp.data.data(), resp_len);
+}
+
 bool try_one_request(connection_state* conn)
 {
     // message size
@@ -86,7 +161,7 @@ bool try_one_request(connection_state* conn)
         return false;
     }
 
-    u_int32_t len = 0;
+    uint32_t len = 0;
     memcpy(&len, conn->incoming.data(), 4);
     if (len > MAX_MSG_LENGTH) {
         alert("message too long");
@@ -101,11 +176,18 @@ bool try_one_request(connection_state* conn)
 
     uint8_t* request = &conn->incoming[4];
 
-    // TODO: process the request
-    printf("client says: len:%d data:%.*s\n",
-        len, len < 100 ? len : 100, request);
+    std::vector<std::string> command;
+    if (parse_req(request, len, command) < 0) {
+        conn->want_close = true;
+        return false;
+    }
 
-    // send the response to outgoing buffer
+    Response resp;
+    process_command(command, resp);
+
+    make_response(resp, conn->outgoing);
+
+    // send the Response to outgoing buffer
     buffer_append(conn->outgoing, (uint8_t const*)&len, 4);
     buffer_append(conn->outgoing, request, len);
 
@@ -205,7 +287,10 @@ void handle_read(connection_state* conn)
     if (conn->outgoing.size() > 0) {
         conn->want_write = true;
         conn->want_read = false;
-        return handle_write(conn);
+
+        // Instead of waiting for the next loop iteration (extra syscall) and a POLLOUT
+        // try to write now
+        return handle_write(conn); // optimization
     }
 }
 
