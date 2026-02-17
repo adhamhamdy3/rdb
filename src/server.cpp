@@ -1,69 +1,5 @@
-#include <cassert>
-#include <errno.h>
-#include <fcntl.h>
-#include <netinet/ip.h>
-#include <poll.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <string>
-#include <sys/socket.h>
-#include <unistd.h>
-#include <vector>
-
-size_t const MAX_MSG_LENGTH = (32 << 20);
-size_t const MAX_ARGS = 200 * 1000;
-
-/*
-struct sockaddr_in {
-  uint16_t sin_family;      // which IP version
-  uint16_t sin_port;        // port number
-  struct in_addr sin_addr;  // ip address
-};
-*/
-
-/*
-struct in_addr {
-  uint32_t s_addr;  // ip address
-};
-*/
-
-/*
-struct pollfd {
-  int fd;
-
-  int events;   // requested flags: POLLIN, POLLOUT, and POLLERR
-  int revents;  // returned allowed events: you can read/write
-};
-*/
-
-struct connection_state {
-    int tcp_socket = -1;
-
-    bool want_read = false;
-    bool want_write = false;
-    bool want_close = false;
-
-    std::vector<uint8_t> incoming; // incoming data for the application logic to process
-    std::vector<uint8_t> outgoing; // outgoing data from the application logic to send
-};
-
-struct Response {
-    uint32_t status = 0;
-    std::vector<uint8_t> data;
-};
-
-void alert(char const* msg)
-{
-    fprintf(stderr, "%s\n", msg);
-}
-
-void log_error(char const* msg)
-{
-    int err = errno;
-    fprintf(stderr, "[%d] %s\n", err, msg);
-    abort();
-}
+#include "server.h"
+#include "logger.h"
 
 void buffer_append(std::vector<uint8_t>& buffer, uint8_t const* data, size_t len)
 {
@@ -223,32 +159,6 @@ connection_state* handle_accept(int tcp_socket)
     return conn;
 }
 
-// app logic when socket is writable
-void handle_write(connection_state* conn)
-{
-    assert(conn->outgoing.size() > 0);
-
-    int ret_val = write(conn->tcp_socket, conn->outgoing.data(), conn->outgoing.size());
-    if (ret_val < 0 && errno == EAGAIN) {
-        return; // not ready
-    }
-
-    if (ret_val < 0) {
-        alert("write() error");
-        conn->want_close = true;
-        return;
-    }
-
-    // remove written data from the outgoing buffer
-    buffer_consume(conn->outgoing, ret_val);
-
-    // state transition
-    if (conn->outgoing.size() == 0) {
-        conn->want_read = true;
-        conn->want_write = false;
-    }
-}
-
 // app logic when socket is readable
 void handle_read(connection_state* conn)
 {
@@ -294,58 +204,86 @@ void handle_read(connection_state* conn)
     }
 }
 
-int main()
+// app logic when socket is writable
+void handle_write(connection_state* conn)
+{
+    assert(conn->outgoing.size() > 0);
+
+    int ret_val = write(conn->tcp_socket, conn->outgoing.data(), conn->outgoing.size());
+    if (ret_val < 0 && errno == EAGAIN) {
+        return; // not ready
+    }
+
+    if (ret_val < 0) {
+        alert("write() error");
+        conn->want_close = true;
+        return;
+    }
+
+    // remove written data from the outgoing buffer
+    buffer_consume(conn->outgoing, ret_val);
+
+    // state transition
+    if (conn->outgoing.size() == 0) {
+        conn->want_read = true;
+        conn->want_write = false;
+    }
+}
+
+void init_server_socket(Server& server)
 {
     // create tcp socket
-    int server_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_socket < 0) {
+    server.socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server.socket < 0) {
         log_error("socket()");
     }
 
     int reuse_option = 1;
-    setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &reuse_option, sizeof(reuse_option));
+    setsockopt(server.socket, SOL_SOCKET, SO_REUSEADDR, &reuse_option, sizeof(reuse_option));
+}
 
+void init_server_address(Server& server, uint16_t port_number, uint32_t ip_address)
+{
     // server address (IP + port)
-    struct sockaddr_in server_address = {};
-
     // htons & htonl swaps from big-endian to little-endian
-    server_address.sin_family = AF_INET; // IPv4
-    server_address.sin_port = htons(1234);
-    server_address.sin_addr.s_addr = htonl(0); // IP 0.0.0.0
+    server.address.sin_family = AF_INET; // IPv4
+    server.address.sin_port = htons(port_number);
+    server.address.sin_addr.s_addr = htonl(ip_address);
 
-    int result_value = bind(server_socket, (const struct sockaddr*)&server_address, sizeof(server_address));
-    if (result_value) {
+    int ret_val = bind(server.socket, (const struct sockaddr*)&server.address, sizeof(server.address));
+    if (ret_val) {
         log_error("bind()");
     }
 
     // set server socket to non-blocking mode
-    socket_set_nb(server_socket);
+    socket_set_nb(server.socket);
+}
 
+void server_start_listen(Server& server)
+{
     // listen
-    result_value = listen(server_socket, SOMAXCONN); // SOMAXCONN: size of the queue
-    if (result_value) {
+    int ret_val = listen(server.socket, SOMAXCONN); // SOMAXCONN: size of the queue
+    if (ret_val) {
         log_error("listen()");
     }
 
     alert("server is listening...");
 
-    // this maps each socket to its connection state
-    /// fds (sockets) on unix are allocated to the smallest available non-negative integer
-    /// so mapping using simple arrays could not be more efficient
-    std::vector<connection_state*> conn_state_map;
+    event_loop(server);
+}
 
-    std::vector<struct pollfd> sockets_list;
-
+void event_loop(Server& server)
+{
     // event loop
     // accept connections
     /// rebuild the sockets list every iteration based on the application logic's intent read/write/error
     while (true) {
-        sockets_list.clear();
+        server.sockets_list.clear();
 
-        struct pollfd socket = { server_socket, POLLIN, 0 }; // index 0: listening socket, non-blocking accept()
-        sockets_list.push_back(socket);
+        struct pollfd socket = { server.socket, POLLIN, 0 }; // index 0: listening socket, non-blocking accept()
+        server.sockets_list.push_back(socket);
 
-        for (connection_state* conn : conn_state_map) {
+        for (connection_state* conn : server.conn_state_map) {
             if (!conn) {
                 continue;
             }
@@ -359,11 +297,11 @@ int main()
                 socket.events |= POLLOUT;
             }
 
-            sockets_list.push_back(socket);
+            server.sockets_list.push_back(socket);
         }
 
         /// blocking - check all sockets receive/send buffers or TCP errors
-        int ret_val = poll(sockets_list.data(), (nfds_t)sockets_list.size(), -1);
+        int ret_val = poll(server.sockets_list.data(), (nfds_t)server.sockets_list.size(), -1);
         if (ret_val < -1 && errno == EINTR) { // nothing is ready rn
             continue;
         }
@@ -371,23 +309,23 @@ int main()
             log_error("poll()");
         }
 
-        if (sockets_list[0].revents & POLLIN) {
-            int listening_socket = sockets_list[0].fd;
+        if (server.sockets_list[0].revents & POLLIN) {
+            int listening_socket = server.sockets_list[0].fd;
 
             connection_state* conn = handle_accept(listening_socket);
             if (conn) {
-                if (conn_state_map.size() <= (size_t)conn->tcp_socket) {
-                    conn_state_map.resize(conn->tcp_socket + 1, nullptr);
+                if (server.conn_state_map.size() <= (size_t)conn->tcp_socket) {
+                    server.conn_state_map.resize(conn->tcp_socket + 1, nullptr);
                 }
-                assert(!conn_state_map[conn->tcp_socket]);
-                conn_state_map[conn->tcp_socket] = conn;
+                assert(!server.conn_state_map[conn->tcp_socket]);
+                server.conn_state_map[conn->tcp_socket] = conn;
             }
         }
 
         // handle connection socket
-        for (size_t i = 1; i < sockets_list.size(); i++) {
-            connection_state* conn = conn_state_map[sockets_list[i].fd];
-            uint32_t revents = sockets_list[i].revents;
+        for (size_t i = 1; i < server.sockets_list.size(); i++) {
+            connection_state* conn = server.conn_state_map[server.sockets_list[i].fd];
+            uint32_t revents = server.sockets_list[i].revents;
 
             if (revents == 0) {
                 continue;
@@ -405,11 +343,9 @@ int main()
 
             if ((revents & POLLERR) || conn->want_close) {
                 close(conn->tcp_socket);
-                conn_state_map[conn->tcp_socket] = nullptr;
+                server.conn_state_map[conn->tcp_socket] = nullptr;
                 delete conn;
             }
         }
     }
-
-    return 0;
 }

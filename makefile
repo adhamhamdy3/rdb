@@ -1,18 +1,15 @@
-CPPFLAGS = -Wall -Wextra -O2 -g
+CXX      := g++
+CXXFLAGS := -std=c++23 -g -Iinclude -Iutil
 
-all: server client
+COMMON_SRC := src/client.cpp src/hashtable.cpp src/rdb.cpp src/server.cpp
 
-server: server.o
-	@g++ $(CPPFLAGS) server.o -o server
+all: redis_server redis_client
 
-client: client.o
-	@g++ $(CPPFLAGS) client.o -o client
+redis_server: redis_server.cpp $(COMMON_SRC)
+	@$(CXX) $(CXXFLAGS) -o $@ $^
 
-server.o: server.cpp
-	@g++ $(CPPFLAGS) -c server.cpp
-
-client.o: client.cpp
-	@g++ $(CPPFLAGS) -c client.cpp
+redis_client: redis_client.cpp $(COMMON_SRC)
+	@$(CXX) $(CXXFLAGS) -o $@ $^
 
 clean:
-	@rm -f server client server.o client.o
+	@rm -f redis_server redis_client
