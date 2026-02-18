@@ -46,7 +46,7 @@ void socket_set_nb(int socket)
     fcntl(socket, F_SETFL, flags);
 }
 
-uint32_t parse_req(uint8_t const* request, uint32_t size, std::vector<std::string>& command)
+int32_t parse_req(uint8_t const* request, uint32_t size, std::vector<std::string>& command)
 {
     uint8_t const* end = request + size;
     uint32_t nstr = 0;
@@ -85,9 +85,9 @@ void process_command(std::vector<std::string>& command, Response& resp)
 void make_response(Response const& resp, std::vector<uint8_t>& outgoing)
 {
     uint32_t resp_len = (uint32_t)4 + resp.data.size();
-    buffer_append(outgoing, (uint8_t const*)resp_len, 4);
-    buffer_append(outgoing, (uint8_t const*)resp.status, 4);
-    buffer_append(outgoing, resp.data.data(), resp_len);
+    buffer_append(outgoing, (uint8_t const*)&resp_len, 4);
+    buffer_append(outgoing, (uint8_t const*)&resp.status, 4);
+    buffer_append(outgoing, resp.data.data(), resp.data.size());
 }
 
 bool try_one_request(connection_state* conn)
@@ -107,7 +107,7 @@ bool try_one_request(connection_state* conn)
 
     // message body
     if (4 + len > conn->incoming.size()) {
-        return false;
+        return false; // request body is not fully received yet
     }
 
     uint8_t* request = &conn->incoming[4];
@@ -121,11 +121,8 @@ bool try_one_request(connection_state* conn)
     Response resp;
     process_command(command, resp);
 
+    // send the response to outgoing buffer
     make_response(resp, conn->outgoing);
-
-    // send the Response to outgoing buffer
-    buffer_append(conn->outgoing, (uint8_t const*)&len, 4);
-    buffer_append(conn->outgoing, request, len);
 
     // remove the message from the incoming buffer
     buffer_consume(conn->incoming, 4 + len);
@@ -288,21 +285,21 @@ void event_loop(Server& server)
                 continue;
             }
 
-            struct pollfd socket = { conn->tcp_socket, POLLERR, 0 }; // always wake up if error happened
+            struct pollfd sock = { conn->tcp_socket, POLLERR, 0 }; // always wake up if error happened
 
             if (conn->want_read) {
-                socket.events |= POLLIN;
+                sock.events |= POLLIN;
             }
             if (conn->want_write) {
-                socket.events |= POLLOUT;
+                sock.events |= POLLOUT;
             }
 
-            server.sockets_list.push_back(socket);
+            server.sockets_list.push_back(sock);
         }
 
         /// blocking - check all sockets receive/send buffers or TCP errors
         int ret_val = poll(server.sockets_list.data(), (nfds_t)server.sockets_list.size(), -1);
-        if (ret_val < -1 && errno == EINTR) { // nothing is ready rn
+        if (ret_val < 0 && errno == EINTR) { // nothing is ready rn
             continue;
         }
         if (ret_val < 0) {
@@ -317,6 +314,7 @@ void event_loop(Server& server)
                 if (server.conn_state_map.size() <= (size_t)conn->tcp_socket) {
                     server.conn_state_map.resize(conn->tcp_socket + 1, nullptr);
                 }
+
                 assert(!server.conn_state_map[conn->tcp_socket]);
                 server.conn_state_map[conn->tcp_socket] = conn;
             }

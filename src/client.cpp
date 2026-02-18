@@ -55,6 +55,7 @@ void init_client_socket(Client& client)
         log_error("socket()");
     }
 }
+
 void client_connect_to(Client& client, u_int32_t ip_address, uint16_t port_number)
 {
     // server address to connect to
@@ -68,25 +69,36 @@ void client_connect_to(Client& client, u_int32_t ip_address, uint16_t port_numbe
     }
 }
 
-int32_t send_request(Client const& client, uint8_t const* data, size_t len)
+int32_t send_request(Client const& client, std::vector<std::string> const& command)
 {
-    if (len > MAX_MSG_LENGTH) {
+    uint32_t total_command_size = 4;
+    for (std::string const str : command) {
+        total_command_size += 4 + str.size();
+    }
+
+    if (total_command_size > MAX_MSG_LENGTH) {
         return -1;
     }
 
-    std::vector<uint8_t> wbuffer;
+    char wbuffer[4 + MAX_MSG_LENGTH];
+    memcpy(&wbuffer[0], &total_command_size, 4);
 
-    uint32_t msg_len = (uint32_t)len;
-    buffer_append(wbuffer, (uint8_t const*)&msg_len, 4);
-    buffer_append(wbuffer, data, len);
+    uint32_t n = command.size();
+    memcpy(&wbuffer[4], &n, 4);
 
-    // send request
-    int32_t ret_val = write_n(client.socket, wbuffer.data(), 4 + len);
-    if (ret_val < 0) {
-        log_error("write()");
+    size_t curr_pos = 8;
+
+    for (std::string const& str : command) {
+        uint32_t str_size = (uint32_t)str.size();
+
+        memcpy(&wbuffer[curr_pos], &str_size, 4);
+        curr_pos += 4;
+
+        memcpy(&wbuffer[curr_pos], str.data(), str.size());
+        curr_pos += str_size;
     }
 
-    return ret_val;
+    return write_n(client.socket, (uint8_t const*)&wbuffer, 4 + total_command_size);
 }
 
 int32_t recv_response(Client const& client)
@@ -97,7 +109,7 @@ int32_t recv_response(Client const& client)
     int32_t ret_val = read_n(client.socket, rbuffer.data(), 4);
     if (ret_val != 4) {
         alert(errno == 0 ? "EOF" : "read() error");
-        return -1;
+        return ret_val;
     }
 
     uint32_t len = 0;
@@ -115,7 +127,10 @@ int32_t recv_response(Client const& client)
         alert("read(): error");
         return -1;
     }
-    printf("server says: %.*s\n", len, &rbuffer[4]);
+
+    uint32_t status = 0;
+    memcpy(&status, &rbuffer[4], 4);
+    printf("server says [status=%u]: %.*s\n", status, (int)(len - 4), &rbuffer[8]);
 
     return 0;
 }
@@ -125,7 +140,7 @@ void close_connection(Client const& client)
     close(client.socket);
 }
 
-void check_err(int ret_val, const Client& client)
+void check_err(int ret_val, Client const& client)
 {
     if (ret_val < 0) {
         close_connection(client);

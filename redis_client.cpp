@@ -6,18 +6,16 @@ int main(int argc, char* argv[])
     init_client_socket(client);
     client_connect_to(client, INADDR_LOOPBACK, 1234);
 
-    std::vector<std::string> requests = {"adham", "hamdy", "hamed", "abdulhamdeid"};
-    for (auto const& req : requests) {
-        auto ret_val = send_request(client, (uint8_t*)req.data(), req.size());
-
-        check_err(ret_val, client);
+    std::vector<std::string> command;
+    for (size_t i = 1; i < argc; i++) {
+        command.push_back(argv[i]);
     }
 
-    for (size_t i = 0; i < requests.size(); i++) {
-        auto ret_val = recv_response(client);
+    auto ret_val = send_request(client, command);
+    check_err(ret_val, client);
 
-        check_err(ret_val, client);
-    }
+    ret_val = recv_response(client);
+    check_err(ret_val, client);
 
     close_connection(client);
 

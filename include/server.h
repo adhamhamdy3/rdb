@@ -56,7 +56,7 @@ struct Response {
     std::vector<uint8_t> data;
 };
 
-uint32_t parse_req(uint8_t const* request, uint32_t size, std::vector<std::string>& command);
+int32_t parse_req(uint8_t const* request, uint32_t size, std::vector<std::string>& command);
 void process_command(std::vector<std::string>& command, Response& resp);
 
 void make_response(Response const& resp, std::vector<uint8_t>& outgoing);
