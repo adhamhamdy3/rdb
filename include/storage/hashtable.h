@@ -1,6 +1,7 @@
 #ifndef HASHTABLE_H
 #define HASHTABLE_H
 
+#include <assert.h>
 #include <stdint.h>
 #include <stdlib.h>
 

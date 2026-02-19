@@ -1,41 +1,4 @@
-#include "server.h"
-#include "logger.h"
-
-void buffer_append(std::vector<uint8_t>& buffer, uint8_t const* data, size_t len)
-{
-    // append to back
-    buffer.insert(buffer.end(), data, data + len);
-}
-
-void buffer_consume(std::vector<uint8_t>& buffer, size_t len)
-{
-    // remove from front
-    buffer.erase(buffer.begin(), buffer.begin() + len);
-}
-
-bool read_u32(uint8_t const*& cur, uint8_t const* end, uint32_t& out)
-{
-    if (cur + 4 > end) {
-        return false;
-    }
-
-    memcpy(&out, cur, 4);
-    cur += 4;
-
-    return true;
-}
-
-bool read_str(uint8_t const*& cur, uint8_t const* end, uint32_t len, std::string& str)
-{
-    if (cur + len > end) {
-        return false;
-    }
-
-    str.assign(cur, cur + len);
-    cur += len;
-
-    return true;
-}
+#include "net/server.h"
 
 void socket_set_nb(int socket)
 {
@@ -51,7 +14,7 @@ int32_t parse_req(uint8_t const* request, uint32_t size, std::vector<std::string
     uint8_t const* end = request + size;
     uint32_t nstr = 0;
 
-    if (!read_u32(request, end, nstr)) {
+    if (!BufferUtil::read_u32(request, end, nstr)) {
         return -1;
     }
 
@@ -61,12 +24,12 @@ int32_t parse_req(uint8_t const* request, uint32_t size, std::vector<std::string
 
     while (command.size() < nstr) {
         uint32_t len = 0;
-        if (!read_u32(request, end, len)) {
+        if (!BufferUtil::read_u32(request, end, len)) {
             return -1;
         }
 
         command.push_back(std::string());
-        if (!read_str(request, end, len, command.back())) {
+        if (!BufferUtil::read_str(request, end, len, command.back())) {
             return -1;
         }
     }
@@ -85,9 +48,9 @@ void process_command(std::vector<std::string>& command, Response& resp)
 void make_response(Response const& resp, std::vector<uint8_t>& outgoing)
 {
     uint32_t resp_len = (uint32_t)4 + resp.data.size();
-    buffer_append(outgoing, (uint8_t const*)&resp_len, 4);
-    buffer_append(outgoing, (uint8_t const*)&resp.status, 4);
-    buffer_append(outgoing, resp.data.data(), resp.data.size());
+    BufferUtil::buffer_append(outgoing, (uint8_t const*)&resp_len, 4);
+    BufferUtil::buffer_append(outgoing, (uint8_t const*)&resp.status, 4);
+    BufferUtil::buffer_append(outgoing, resp.data.data(), resp.data.size());
 }
 
 bool try_one_request(connection_state* conn)
@@ -100,7 +63,7 @@ bool try_one_request(connection_state* conn)
     uint32_t len = 0;
     memcpy(&len, conn->incoming.data(), 4);
     if (len > MAX_MSG_LENGTH) {
-        alert("message too long");
+        Logger::alert("message too long");
         conn->want_close = true;
         return false;
     }
@@ -125,7 +88,7 @@ bool try_one_request(connection_state* conn)
     make_response(resp, conn->outgoing);
 
     // remove the message from the incoming buffer
-    buffer_consume(conn->incoming, 4 + len);
+    BufferUtil::buffer_consume(conn->incoming, 4 + len);
 
     return true;
 }
@@ -166,7 +129,7 @@ void handle_read(connection_state* conn)
     }
 
     if (ret_val < 0) {
-        alert("read() error");
+        Logger::alert("read() error");
         conn->want_close = true;
         return;
     }
@@ -174,16 +137,16 @@ void handle_read(connection_state* conn)
     // handle EOF
     if (ret_val == 0) {
         if (conn->incoming.size() == 0) {
-            alert("client closed");
+            Logger::alert("client closed");
         } else {
-            alert("unexpected EOF");
+            Logger::alert("unexpected EOF");
         }
         conn->want_close = true;
         return;
     }
 
     // accumulate the new data to connection state incoming data buffer
-    buffer_append(conn->incoming, buffer, ret_val);
+    BufferUtil::buffer_append(conn->incoming, buffer, ret_val);
 
     // try to parse the accumulated data
     while (try_one_request(conn)) {
@@ -212,13 +175,13 @@ void handle_write(connection_state* conn)
     }
 
     if (ret_val < 0) {
-        alert("write() error");
+        Logger::alert("write() error");
         conn->want_close = true;
         return;
     }
 
     // remove written data from the outgoing buffer
-    buffer_consume(conn->outgoing, ret_val);
+    BufferUtil::buffer_consume(conn->outgoing, ret_val);
 
     // state transition
     if (conn->outgoing.size() == 0) {
@@ -232,7 +195,7 @@ void init_server_socket(Server& server)
     // create tcp socket
     server.socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server.socket < 0) {
-        log_error("socket()");
+        Logger::log_error("socket()");
     }
 
     int reuse_option = 1;
@@ -249,7 +212,7 @@ void init_server_address(Server& server, uint16_t port_number, uint32_t ip_addre
 
     int ret_val = bind(server.socket, (const struct sockaddr*)&server.address, sizeof(server.address));
     if (ret_val) {
-        log_error("bind()");
+        Logger::log_error("bind()");
     }
 
     // set server socket to non-blocking mode
@@ -261,10 +224,10 @@ void server_start_listen(Server& server)
     // listen
     int ret_val = listen(server.socket, SOMAXCONN); // SOMAXCONN: size of the queue
     if (ret_val) {
-        log_error("listen()");
+        Logger::log_error("listen()");
     }
 
-    alert("server is listening...");
+    Logger::alert("server is listening...");
 
     event_loop(server);
 }
@@ -303,7 +266,7 @@ void event_loop(Server& server)
             continue;
         }
         if (ret_val < 0) {
-            log_error("poll()");
+            Logger::log_error("poll()");
         }
 
         if (server.sockets_list[0].revents & POLLIN) {

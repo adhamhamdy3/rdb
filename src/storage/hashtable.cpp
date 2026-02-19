@@ -1,5 +1,4 @@
-#include "hashtable.h"
-#include <assert.h>
+#include "storage/hashtable.h"
 
 /// (n % 2) - bitwise AND modulo
 #define mod2(n) ((n - 1) & n)

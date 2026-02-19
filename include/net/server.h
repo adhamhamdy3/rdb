@@ -1,18 +1,18 @@
 #ifndef SERVER_H
 #define SERVER_H
 
-#include <cassert>
-#include <errno.h>
+// Networking
 #include <fcntl.h>
 #include <netinet/ip.h>
 #include <poll.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <string>
-#include <sys/socket.h>
 #include <unistd.h>
-#include <vector>
+
+// clibs
+#include <cassert>
+
+// Utils
+#include "io/buffer_util.h"
+#include "log/logger.h"
 
 /*
 struct sockaddr_in {

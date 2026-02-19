@@ -1,17 +1,17 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-#include "logger.h"
+// Networking
+#include "io/network_io.h"
 #include <arpa/inet.h>
-#include <cassert>
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
+
+// STLs
 #include <string.h>
 #include <string>
-#include <sys/socket.h>
-#include <unistd.h>
 #include <vector>
+
+// Utils
+#include "log/logger.h"
 
 size_t const MAX_MSG_LENGTH = 4096;
 
