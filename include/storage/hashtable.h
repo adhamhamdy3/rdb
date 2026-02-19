@@ -5,6 +5,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#define container_of(ptr, T, member) \
+    ((T*)((char*)ptr - offsetof(T, member)))
+
 struct HNode {
     HNode* next = nullptr;
     uint64_t hcode = 0; // hash value of the key

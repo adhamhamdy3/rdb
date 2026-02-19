@@ -40,9 +40,19 @@ int32_t parse_req(uint8_t const* request, uint32_t size, std::vector<std::string
     return 0;
 }
 
-void process_command(std::vector<std::string>& command, Response& resp)
+void process_command(std::vector<std::string> const& command, Response& resp, Database& db)
 {
-    // TODO: process the command
+    if (command.size() == 2) {
+        if (command[0] == "get") {
+            do_get(command, resp, db);
+        } else if (command[0] == "del") {
+            do_del(command, resp, db);
+        }
+    } else if (command.size() == 3 && command[0] == "set") {
+        do_set(command, resp, db);
+    } else {
+        resp.status = RES_ERR;
+    }
 }
 
 void make_response(Response const& resp, std::vector<uint8_t>& outgoing)
@@ -53,7 +63,7 @@ void make_response(Response const& resp, std::vector<uint8_t>& outgoing)
     BufferUtil::buffer_append(outgoing, resp.data.data(), resp.data.size());
 }
 
-bool try_one_request(connection_state* conn)
+bool try_one_request(connection_state* conn, Database& db)
 {
     // message size
     if (conn->incoming.size() < 4) {
@@ -82,7 +92,7 @@ bool try_one_request(connection_state* conn)
     }
 
     Response resp;
-    process_command(command, resp);
+    process_command(command, resp, db);
 
     // send the response to outgoing buffer
     make_response(resp, conn->outgoing);
@@ -120,7 +130,7 @@ connection_state* handle_accept(int tcp_socket)
 }
 
 // app logic when socket is readable
-void handle_read(connection_state* conn)
+void handle_read(connection_state* conn, Database& db)
 {
     uint8_t buffer[64 * 1024];
     ssize_t ret_val = read(conn->tcp_socket, buffer, sizeof(buffer));
@@ -149,7 +159,7 @@ void handle_read(connection_state* conn)
     BufferUtil::buffer_append(conn->incoming, buffer, ret_val);
 
     // try to parse the accumulated data
-    while (try_one_request(conn)) {
+    while (try_one_request(conn, db)) {
         /* do nothing */
     }
 
@@ -294,7 +304,7 @@ void event_loop(Server& server)
 
             if (revents & POLLIN) {
                 assert(conn->want_read);
-                handle_read(conn);
+                handle_read(conn, server.db);
             }
 
             if (revents & POLLOUT) {

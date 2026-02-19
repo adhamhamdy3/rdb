@@ -2,6 +2,7 @@
 #define SERVER_H
 
 // Networking
+#include "protocol.h"
 #include <fcntl.h>
 #include <netinet/ip.h>
 #include <poll.h>
@@ -13,6 +14,9 @@
 // Utils
 #include "io/buffer_util.h"
 #include "log/logger.h"
+
+// Storage
+#include "storage/rdb.h"
 
 /*
 struct sockaddr_in {
@@ -37,9 +41,6 @@ struct pollfd {
 };
 */
 
-size_t const MAX_MSG_LENGTH = (32 << 20);
-size_t const MAX_ARGS = 200 * 1000;
-
 struct connection_state {
     int tcp_socket = -1;
 
@@ -51,19 +52,14 @@ struct connection_state {
     std::vector<uint8_t> outgoing; // outgoing data from the application logic to send
 };
 
-struct Response {
-    uint32_t status = 0;
-    std::vector<uint8_t> data;
-};
-
 int32_t parse_req(uint8_t const* request, uint32_t size, std::vector<std::string>& command);
-void process_command(std::vector<std::string>& command, Response& resp);
+void process_command(std::vector<std::string> const& command, Response& resp, Database& db);
 
 void make_response(Response const& resp, std::vector<uint8_t>& outgoing);
-bool try_one_request(connection_state* conn);
+bool try_one_request(connection_state* conn, Database& db);
 
 connection_state* handle_accept(int tcp_socket);
-void handle_read(connection_state* conn);
+void handle_read(connection_state* conn, Database& db);
 void handle_write(connection_state* conn);
 
 struct Server {
@@ -76,6 +72,8 @@ struct Server {
     std::vector<connection_state*> conn_state_map;
 
     std::vector<struct pollfd> sockets_list;
+
+    Database db;
 };
 
 void init_server_socket(Server& server);
