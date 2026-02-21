@@ -3,6 +3,7 @@
 
 #include "hashtable.h"
 #include "net/protocol.h"
+#include "net/response.h"
 #include <string>
 #include <vector>
 

@@ -24,34 +24,10 @@ void client_connect_to(Client& client, u_int32_t ip_address, uint16_t port_numbe
 
 int32_t send_request(Client const& client, std::vector<std::string> const& command)
 {
-    uint32_t total_command_size = 4;
-    for (std::string const str : command) {
-        total_command_size += 4 + str.size();
-    }
+    std::vector<uint8_t> out;
+    Protocol::serialize_request(command, out);
 
-    if (total_command_size > MAX_MSG_LENGTH) {
-        return -1;
-    }
-
-    char wbuffer[4 + MAX_MSG_LENGTH];
-    memcpy(&wbuffer[0], &total_command_size, 4);
-
-    uint32_t n = command.size();
-    memcpy(&wbuffer[4], &n, 4);
-
-    size_t curr_pos = 8;
-
-    for (std::string const& str : command) {
-        uint32_t str_size = (uint32_t)str.size();
-
-        memcpy(&wbuffer[curr_pos], &str_size, 4);
-        curr_pos += 4;
-
-        memcpy(&wbuffer[curr_pos], str.data(), str.size());
-        curr_pos += str_size;
-    }
-
-    return NetworkIO::write_n(client.socket, (uint8_t const*)&wbuffer, 4 + total_command_size);
+    return NetworkIO::write_n(client.socket, out.data(), out.size());
 }
 
 int32_t recv_response(Client const& client)
@@ -67,7 +43,7 @@ int32_t recv_response(Client const& client)
 
     uint32_t len = 0;
     memcpy(&len, rbuffer.data(), 4);
-    if (len > MAX_MSG_LENGTH) {
+    if (len > CMAX_MSG_LENGTH) {
         Logger::alert("payload is too long");
         return -1;
     }
@@ -81,11 +57,7 @@ int32_t recv_response(Client const& client)
         return -1;
     }
 
-    uint32_t status = 0;
-    memcpy(&status, &rbuffer[4], 4);
-    printf("server says [status=%u]: %.*s\n", status, (int)(len - 4), &rbuffer[8]);
-
-    return 0;
+    return Protocol::deserialize_response(rbuffer);
 }
 
 void close_connection(Client const& client)

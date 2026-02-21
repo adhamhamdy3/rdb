@@ -9,37 +9,6 @@ void socket_set_nb(int socket)
     fcntl(socket, F_SETFL, flags);
 }
 
-int32_t parse_req(uint8_t const* request, uint32_t size, std::vector<std::string>& command)
-{
-    uint8_t const* end = request + size;
-    uint32_t nstr = 0;
-
-    if (!BufferUtil::read_u32(request, end, nstr)) {
-        return -1;
-    }
-
-    if (nstr > MAX_ARGS) {
-        return -1;
-    }
-
-    while (command.size() < nstr) {
-        uint32_t len = 0;
-        if (!BufferUtil::read_u32(request, end, len)) {
-            return -1;
-        }
-
-        command.push_back(std::string());
-        if (!BufferUtil::read_str(request, end, len, command.back())) {
-            return -1;
-        }
-    }
-    if (request != end) {
-        return -1;
-    }
-
-    return 0;
-}
-
 void process_command(std::vector<std::string> const& command, Response& resp, Database& db)
 {
     if (command.size() == 2) {
@@ -55,14 +24,6 @@ void process_command(std::vector<std::string> const& command, Response& resp, Da
     }
 }
 
-void make_response(Response const& resp, std::vector<uint8_t>& outgoing)
-{
-    uint32_t resp_len = (uint32_t)4 + resp.data.size();
-    BufferUtil::buffer_append(outgoing, (uint8_t const*)&resp_len, 4);
-    BufferUtil::buffer_append(outgoing, (uint8_t const*)&resp.status, 4);
-    BufferUtil::buffer_append(outgoing, resp.data.data(), resp.data.size());
-}
-
 bool try_one_request(connection_state* conn, Database& db)
 {
     // message size
@@ -72,7 +33,7 @@ bool try_one_request(connection_state* conn, Database& db)
 
     uint32_t len = 0;
     memcpy(&len, conn->incoming.data(), 4);
-    if (len > MAX_MSG_LENGTH) {
+    if (len > SMAX_MSG_LENGTH) {
         Logger::alert("message too long");
         conn->want_close = true;
         return false;
@@ -86,7 +47,7 @@ bool try_one_request(connection_state* conn, Database& db)
     uint8_t* request = &conn->incoming[4];
 
     std::vector<std::string> command;
-    if (parse_req(request, len, command) < 0) {
+    if (Protocol::deserialize_request(request, len, command) < 0) {
         conn->want_close = true;
         return false;
     }
@@ -95,7 +56,7 @@ bool try_one_request(connection_state* conn, Database& db)
     process_command(command, resp, db);
 
     // send the response to outgoing buffer
-    make_response(resp, conn->outgoing);
+    Protocol::serialize_response(resp, conn->outgoing);
 
     // remove the message from the incoming buffer
     BufferUtil::buffer_consume(conn->incoming, 4 + len);
