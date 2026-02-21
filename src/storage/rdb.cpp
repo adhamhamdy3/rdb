@@ -17,7 +17,7 @@ uint64_t str_hash(uint8_t const* data, size_t len) // FNV hash function
     return h;
 }
 
-void do_get(std::vector<std::string> const& command, Response& response, Database& db)
+void do_get(std::vector<std::string> const& command, Buffer& buf, Database& db)
 {
     Entry entry;
     entry.key = command[1];
@@ -25,17 +25,17 @@ void do_get(std::vector<std::string> const& command, Response& response, Databas
 
     HNode* node = hm_lookup(&db.hashmap, &entry.node, entry_eq);
     if (!node) {
-        response.status = RES_NX;
-        return;
+        return buf_out_nil(buf, TAG_NIL);
     }
 
     std::string const& value = container_of(node, Entry, node)->value;
     assert(value.size() < SMAX_MSG_LENGTH);
 
-    response.data.assign(value.begin(), value.end());
+    // copy the value
+    return buf_out_str(buf, TAG_STR, value.data(), value.size());
 }
 
-void do_set(std::vector<std::string> const& command, Response& response, Database& db)
+void do_set(std::vector<std::string> const& command, Buffer& buf, Database& db)
 {
     Entry entry;
     entry.key = command[1];
@@ -54,9 +54,11 @@ void do_set(std::vector<std::string> const& command, Response& response, Databas
 
         hm_insert(&db.hashmap, &e->node);
     }
+
+    return buf_out_nil(buf, TAG_NIL);
 }
 
-void do_del(std::vector<std::string> const& command, Response& response, Database& db)
+void do_del(std::vector<std::string> const& command, Buffer& buf, Database& db)
 {
     Entry entry;
     entry.key = command[1];
@@ -67,4 +69,6 @@ void do_del(std::vector<std::string> const& command, Response& response, Databas
     if (node) {
         delete container_of(node, Entry, node);
     }
+
+    return buf_out_int(buf, TAG_INT, node ? 1 : 0);
 }

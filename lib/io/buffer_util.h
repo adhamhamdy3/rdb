@@ -7,17 +7,6 @@
 #include <vector>
 
 namespace BufferUtil {
-inline void buffer_append(std::vector<uint8_t>& buffer, uint8_t const* data, size_t len)
-{
-    // append to back
-    buffer.insert(buffer.end(), data, data + len);
-}
-
-inline void buffer_consume(std::vector<uint8_t>& buffer, size_t len)
-{
-    // remove from front
-    buffer.erase(buffer.begin(), buffer.begin() + len);
-}
 
 inline bool read_u32(uint8_t const*& cur, uint8_t const* end, uint32_t& out)
 {

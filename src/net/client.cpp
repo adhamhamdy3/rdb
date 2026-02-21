@@ -24,34 +24,35 @@ void client_connect_to(Client& client, u_int32_t ip_address, uint16_t port_numbe
 
 int32_t send_request(Client const& client, std::vector<std::string> const& command)
 {
-    std::vector<uint8_t> out;
+    Buffer out;
     Protocol::serialize_request(command, out);
 
-    return NetworkIO::write_n(client.socket, out.data(), out.size());
+    return NetworkIO::write_n(client.socket, out.data.data(), out.data.size());
 }
 
 int32_t recv_response(Client const& client)
 {
-    std::vector<uint8_t> rbuffer(4);
+    Buffer rbuffer;
+    rbuffer.data.assign(4, {});
 
     errno = 0;
-    int32_t ret_val = NetworkIO::read_n(client.socket, rbuffer.data(), 4);
+    int32_t ret_val = NetworkIO::read_n(client.socket, rbuffer.data.data(), 4);
     if (ret_val != 4) {
         Logger::alert(errno == 0 ? "EOF" : "read() error");
         return ret_val;
     }
 
     uint32_t len = 0;
-    memcpy(&len, rbuffer.data(), 4);
+    memcpy(&len, rbuffer.data.data(), 4);
     if (len > CMAX_MSG_LENGTH) {
         Logger::alert("payload is too long");
         return -1;
     }
 
     // resize the rbuffer to fit the incoming response
-    rbuffer.resize(4 + len);
+    rbuffer.data.resize(4 + len);
 
-    ret_val = NetworkIO::read_n(client.socket, &rbuffer[4], len);
+    ret_val = NetworkIO::read_n(client.socket, &rbuffer.data[4], len);
     if (ret_val != len) {
         Logger::alert("read(): error");
         return -1;

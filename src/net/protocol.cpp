@@ -1,6 +1,31 @@
 #include "net/protocol.h"
 
-int32_t Protocol::serialize_request(std::vector<std::string> const& command, std::vector<uint8_t>& out)
+void Protocol::response_begin(Buffer& out, size_t* header)
+{
+    *header = out.data.size(); // save the header position
+    buf_append_u32(out, 0);    // reserve 4 bytes
+}
+
+size_t Protocol::response_size(Buffer const& out, size_t header)
+{
+    return out.data.size() - header - 4;
+}
+
+void Protocol::response_end(Buffer& out, size_t header)
+{
+    size_t msg_size = response_size(out, header);
+
+    if (msg_size > SMAX_MSG_LENGTH) {
+        out.data.resize(header + 4);
+        buf_out_err(out, TAG_ERR, ERR_TOO_BIG, "payload is too long.");
+        msg_size = response_size(out, header);
+    }
+
+    uint32_t len = (uint32_t)msg_size;
+    memcpy(&out.data[header], &len, 4); // write the real body size
+}
+
+int32_t Protocol::serialize_request(std::vector<std::string> const& command, Buffer& out)
 {
     uint32_t total_command_size = 4;
     for (std::string const str : command) {
@@ -11,16 +36,16 @@ int32_t Protocol::serialize_request(std::vector<std::string> const& command, std
         return -1;
     }
 
-    BufferUtil::buffer_append(out, (uint8_t const*)&total_command_size, 4);
+    buffer_append(out, (uint8_t const*)&total_command_size, 4);
 
     uint32_t n_str = command.size();
-    BufferUtil::buffer_append(out, (uint8_t const*)&n_str, 4);
+    buffer_append(out, (uint8_t const*)&n_str, 4);
 
     for (std::string const& str : command) {
         uint32_t str_size = (uint32_t)str.size();
 
-        BufferUtil::buffer_append(out, (uint8_t const*)&str_size, 4);
-        BufferUtil::buffer_append(out, (uint8_t const*)str.data(), str.size());
+        buffer_append(out, (uint8_t const*)&str_size, 4);
+        buffer_append(out, (uint8_t const*)str.data(), str.size());
     }
 
     return 0;
@@ -57,23 +82,30 @@ int32_t Protocol::deserialize_request(uint8_t const* request, uint32_t size, std
     return 0;
 }
 
-void Protocol::serialize_response(Response const& resp, std::vector<uint8_t>& outgoing)
+int32_t Protocol::deserialize_response(Buffer const& buffer)
 {
-    uint32_t resp_len = (uint32_t)4 + resp.data.size();
-    BufferUtil::buffer_append(outgoing, (uint8_t const*)&resp_len, 4);
-    BufferUtil::buffer_append(outgoing, (uint8_t const*)&resp.status, 4);
-    BufferUtil::buffer_append(outgoing, resp.data.data(), resp.data.size());
-}
+    uint32_t size = 0;
+    uint8_t const* data = buffer.data.data() + 4;
+    memcpy(&size, buffer.data.data(), 4);
 
-int32_t Protocol::deserialize_response(std::vector<uint8_t> const& buffer)
-{
-    // TODO: read32()
-    uint32_t len = 0;
-    memcpy(&len, buffer.data(), 4);
+    if (size < 1) {
+        Logger::alert("bad response");
+        return -1;
+    }
 
-    uint32_t status = 0;
-    memcpy(&status, &buffer[4], 4);
-    printf("server says [status=%u]: %.*s\n", status, (int)(len - 4), &buffer[8]);
-
-    return 0;
+    switch (data[0]) {
+    case TAG_NIL:
+        return Parser::parse_nil(data, size);
+    case TAG_ERR:
+        return Parser::parse_err(data, size);
+    case TAG_STR:
+        return Parser::parse_str(data, size);
+    case TAG_INT:
+        return Parser::parse_int(data, size);
+    case TAG_DBL:
+        return Parser::parse_dbl(data, size);
+    default:
+        Logger::alert("bad response");
+        return -1;
+    }
 }
