@@ -30,7 +30,7 @@ void do_get(std::vector<std::string> const& command, Response& response, Databas
     }
 
     std::string const& value = container_of(node, Entry, node)->value;
-    assert(value.size() < MAX_MSG_LENGTH);
+    assert(value.size() < SMAX_MSG_LENGTH);
 
     response.data.assign(value.begin(), value.end());
 }

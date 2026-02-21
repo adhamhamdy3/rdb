@@ -2,7 +2,8 @@
 #define SERVER_H
 
 // Networking
-#include "protocol.h"
+#include "net/protocol.h"
+#include "response.h"
 #include <fcntl.h>
 #include <netinet/ip.h>
 #include <poll.h>
@@ -52,10 +53,8 @@ struct connection_state {
     std::vector<uint8_t> outgoing; // outgoing data from the application logic to send
 };
 
-int32_t parse_req(uint8_t const* request, uint32_t size, std::vector<std::string>& command);
 void process_command(std::vector<std::string> const& command, Response& resp, Database& db);
 
-void make_response(Response const& resp, std::vector<uint8_t>& outgoing);
 bool try_one_request(connection_state* conn, Database& db);
 
 connection_state* handle_accept(int tcp_socket);
