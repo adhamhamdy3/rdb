@@ -3,7 +3,6 @@
 
 // Networking
 #include "net/protocol.h"
-#include "response.h"
 #include <fcntl.h>
 #include <netinet/ip.h>
 #include <poll.h>
@@ -13,7 +12,6 @@
 #include <cassert>
 
 // Utils
-#include "io/buffer_util.h"
 #include "log/logger.h"
 
 // Storage
@@ -49,11 +47,11 @@ struct connection_state {
     bool want_write = false;
     bool want_close = false;
 
-    std::vector<uint8_t> incoming; // incoming data for the application logic to process
-    std::vector<uint8_t> outgoing; // outgoing data from the application logic to send
+    Buffer incoming; // incoming data for the application logic to process
+    Buffer outgoing; // outgoing data from the application logic to send
 };
 
-void process_command(std::vector<std::string> const& command, Response& resp, Database& db);
+void process_command(std::vector<std::string> const& command, Buffer& buf, Database& db);
 
 bool try_one_request(connection_state* conn, Database& db);
 

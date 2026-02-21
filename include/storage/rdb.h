@@ -3,7 +3,6 @@
 
 #include "hashtable.h"
 #include "net/protocol.h"
-#include "net/response.h"
 #include <string>
 #include <vector>
 
@@ -22,8 +21,8 @@ struct Database {
 
 uint64_t str_hash(uint8_t const* data, size_t len); // FNV hash function
 
-void do_get(std::vector<std::string> const& command, Response& response, Database& db);
-void do_set(std::vector<std::string> const& command, Response& response, Database& db);
-void do_del(std::vector<std::string> const& command, Response& response, Database& db);
+void do_get(std::vector<std::string> const& command, Buffer& buf, Database& db);
+void do_set(std::vector<std::string> const& command, Buffer& buf, Database& db);
+void do_del(std::vector<std::string> const& command, Buffer& buf, Database& db);
 
 #endif

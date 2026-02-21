@@ -9,30 +9,28 @@ void socket_set_nb(int socket)
     fcntl(socket, F_SETFL, flags);
 }
 
-void process_command(std::vector<std::string> const& command, Response& resp, Database& db)
+void process_command(std::vector<std::string> const& command, Buffer& buf, Database& db)
 {
-    if (command.size() == 2) {
-        if (command[0] == "get") {
-            do_get(command, resp, db);
-        } else if (command[0] == "del") {
-            do_del(command, resp, db);
-        }
+    if (command.size() == 2 && command[0] == "get") {
+        do_get(command, buf, db);
+    } else if (command.size() == 2 && command[0] == "del") {
+        do_del(command, buf, db);
     } else if (command.size() == 3 && command[0] == "set") {
-        do_set(command, resp, db);
+        do_set(command, buf, db);
     } else {
-        resp.status = RES_ERR;
+        buf_out_err(buf, TAG_ERR, ERR_UNKNOWN, "unknown command.");
     }
 }
 
 bool try_one_request(connection_state* conn, Database& db)
 {
     // message size
-    if (conn->incoming.size() < 4) {
+    if (conn->incoming.data.size() < 4) {
         return false;
     }
 
     uint32_t len = 0;
-    memcpy(&len, conn->incoming.data(), 4);
+    memcpy(&len, conn->incoming.data.data(), 4);
     if (len > SMAX_MSG_LENGTH) {
         Logger::alert("message too long");
         conn->want_close = true;
@@ -40,26 +38,28 @@ bool try_one_request(connection_state* conn, Database& db)
     }
 
     // message body
-    if (4 + len > conn->incoming.size()) {
+    if (4 + len > conn->incoming.data.size()) {
         return false; // request body is not fully received yet
     }
 
-    uint8_t* request = &conn->incoming[4];
+    uint8_t* request = &conn->incoming.data[4];
 
     std::vector<std::string> command;
     if (Protocol::deserialize_request(request, len, command) < 0) {
+        Logger::alert("bad request");
         conn->want_close = true;
         return false;
     }
 
-    Response resp;
-    process_command(command, resp, db);
+    size_t header = 0;
+    Protocol::response_begin(conn->outgoing, &header);
 
-    // send the response to outgoing buffer
-    Protocol::serialize_response(resp, conn->outgoing);
+    process_command(command, conn->outgoing, db);
+
+    Protocol::response_end(conn->outgoing, header);
 
     // remove the message from the incoming buffer
-    BufferUtil::buffer_consume(conn->incoming, 4 + len);
+    buffer_consume(conn->incoming, 4 + len);
 
     return true;
 }
@@ -107,7 +107,7 @@ void handle_read(connection_state* conn, Database& db)
 
     // handle EOF
     if (ret_val == 0) {
-        if (conn->incoming.size() == 0) {
+        if (conn->incoming.data.size() == 0) {
             Logger::alert("client closed");
         } else {
             Logger::alert("unexpected EOF");
@@ -117,7 +117,7 @@ void handle_read(connection_state* conn, Database& db)
     }
 
     // accumulate the new data to connection state incoming data buffer
-    BufferUtil::buffer_append(conn->incoming, buffer, ret_val);
+    buffer_append(conn->incoming, buffer, ret_val);
 
     // try to parse the accumulated data
     while (try_one_request(conn, db)) {
@@ -125,7 +125,7 @@ void handle_read(connection_state* conn, Database& db)
     }
 
     // state transition
-    if (conn->outgoing.size() > 0) {
+    if (conn->outgoing.data.size() > 0) {
         conn->want_write = true;
         conn->want_read = false;
 
@@ -138,9 +138,9 @@ void handle_read(connection_state* conn, Database& db)
 // app logic when socket is writable
 void handle_write(connection_state* conn)
 {
-    assert(conn->outgoing.size() > 0);
+    assert(conn->outgoing.data.size() > 0);
 
-    int ret_val = write(conn->tcp_socket, conn->outgoing.data(), conn->outgoing.size());
+    int ret_val = write(conn->tcp_socket, conn->outgoing.data.data(), conn->outgoing.data.size());
     if (ret_val < 0 && errno == EAGAIN) {
         return; // not ready
     }
@@ -152,10 +152,10 @@ void handle_write(connection_state* conn)
     }
 
     // remove written data from the outgoing buffer
-    BufferUtil::buffer_consume(conn->outgoing, ret_val);
+    buffer_consume(conn->outgoing, ret_val);
 
     // state transition
-    if (conn->outgoing.size() == 0) {
+    if (conn->outgoing.data.size() == 0) {
         conn->want_read = true;
         conn->want_write = false;
     }
