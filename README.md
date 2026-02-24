@@ -148,4 +148,4 @@ This project is still a work in progress. Planned additions include:
 
 ## License
 
-This project is open source. License to be determined.
+This project is licensed under the [MIT License](LICENSE).
