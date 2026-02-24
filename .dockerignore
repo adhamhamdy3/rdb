@@ -1,0 +1,7 @@
+.git
+*.o
+*.a
+build
+out
+cmake-build*
+.vscode
