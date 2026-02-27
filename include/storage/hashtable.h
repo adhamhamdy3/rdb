@@ -23,6 +23,8 @@ void h_insert(HTable* htable, HNode* node);
 HNode** h_lookup(HTable* htable, HNode* key, bool (*eq)(HNode*, HNode*));
 HNode* h_detach(HTable* htable, HNode** from);
 
+uint64_t str_hash(uint8_t const* data, size_t len); // FNV hash function
+
 struct HMap {
     HTable older;
     HTable newer;

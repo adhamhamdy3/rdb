@@ -80,6 +80,15 @@ HNode* h_detach(HTable* htable, HNode** from)
     return node;
 }
 
+uint64_t str_hash(uint8_t const* data, size_t len) // FNV hash function
+{
+    uint32_t h = 0x811C9DC5;
+    for (size_t i = 0; i < len; i++) {
+        h = (h + data[i]) * 0x01000193;
+    }
+    return h;
+}
+
 void hm_insert(HMap* hmap, HNode* node)
 {
     if (!hmap->newer.table) {
