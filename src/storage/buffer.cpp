@@ -50,10 +50,29 @@ void buf_out_int(Buffer& buf, uint8_t tag, int64_t value)
     buf_append_i64(buf, value);
 }
 
+void buf_out_dbl(Buffer& buf, uint8_t tag, double val)
+{
+    buf_append_u8(buf, tag);
+    buf_append_dbl(buf, val);
+}
+
+size_t buf_begin_arr(Buffer& buf, uint8_t tag)
+{
+    buf.data.push_back(tag);
+    buf_append_u32(buf, 0);
+    return buf.data.size() - 4; // ctx
+}
+
 void buf_out_arr(Buffer& buf, uint8_t tag, uint32_t n)
 {
     buf_append_u8(buf, tag);
     buf_append_u32(buf, n);
+}
+
+void buf_end_arr(Buffer& buf, uint8_t tag, size_t ctx, uint32_t n)
+{
+    assert(buf.data[ctx - 1] == tag);
+    memcpy(&buf.data[ctx], &n, 4);
 }
 
 void buf_out_err(Buffer& buf, uint8_t tag, uint32_t code, std::string const& msg)
