@@ -38,4 +38,9 @@ void do_get(std::vector<std::string> const& command, Buffer& buf, Database& db);
 void do_set(std::vector<std::string> const& command, Buffer& buf, Database& db);
 void do_del(std::vector<std::string> const& command, Buffer& buf, Database& db);
 
+void do_zadd(std::vector<std::string> const& command, Buffer& buf, Database& db);
+void do_zrem(std::vector<std::string> const& command, Buffer& buf, Database& db);
+void do_zscore(std::vector<std::string> const& command, Buffer& buf, Database& db);
+void do_zquery(std::vector<std::string> const& command, Buffer& buf, Database& db);
+
 #endif
