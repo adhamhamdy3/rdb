@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include <stddef.h>
+
 #define container_of(ptr, T, member) \
     ((T*)((char*)ptr - offsetof(T, member)))
 
@@ -22,6 +24,7 @@ struct HTable {
 void h_insert(HTable* htable, HNode* node);
 HNode** h_lookup(HTable* htable, HNode* key, bool (*eq)(HNode*, HNode*));
 HNode* h_detach(HTable* htable, HNode** from);
+bool h_foreach(HTable* htable, bool (*f)(HNode*, void*), void* arg);
 
 uint64_t str_hash(uint8_t const* data, size_t len); // FNV hash function
 
@@ -36,5 +39,6 @@ HNode* hm_lookup(HMap* hmap, HNode* key, bool (*eq)(HNode*, HNode*));
 HNode* hm_delete(HMap* hmap, HNode* key, bool (*eq)(HNode*, HNode*));
 void hm_clear(HMap* hmap);
 size_t hm_size(HMap* hmap);
+void hm_foreach(HMap* hmap, bool (*f)(HNode*, void*), void* arg);
 
 #endif
