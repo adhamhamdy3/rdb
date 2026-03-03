@@ -80,6 +80,28 @@ HNode* h_detach(HTable* htable, HNode** from)
     return node;
 }
 
+bool h_foreach(HTable* htable, bool (*f)(HNode*, void*), void* arg)
+{
+    for (size_t i = 0; htable->mask && i <= htable->mask; i++) {
+        for (HNode* node = htable->table[i]; node != nullptr; node = node->next) {
+            if (!f(node, arg)) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+uint64_t str_hash(uint8_t const* data, size_t len) // FNV hash function
+{
+    uint32_t h = 0x811C9DC5;
+    for (size_t i = 0; i < len; i++) {
+        h = (h + data[i]) * 0x01000193;
+    }
+    return h;
+}
+
 void hm_insert(HMap* hmap, HNode* node)
 {
     if (!hmap->newer.table) {
@@ -129,14 +151,19 @@ HNode* hm_delete(HMap* hmap, HNode* key, bool (*eq)(HNode*, HNode*))
     return nullptr;
 }
 
-void hm_clear(HMap* hmap)
+void hm_foreach(HMap* hmap, bool (*f)(HNode*, void*), void* arg)
 {
-    free(hmap->newer.table);
-    free(hmap->older.table);
-    *hmap = HMap {};
+    h_foreach(&hmap->newer, f, arg) && h_foreach(&hmap->older, f, arg);
 }
 
 size_t hm_size(HMap* hmap)
 {
     return hmap->newer.size + hmap->older.size;
+}
+
+void hm_clear(HMap* hmap)
+{
+    free(hmap->newer.table);
+    free(hmap->older.table);
+    *hmap = HMap {};
 }

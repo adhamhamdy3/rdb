@@ -1,7 +1,9 @@
 #ifndef BUFFER_H
 #define BUFFER_H
 
+#include <cassert>
 #include <cstdint>
+#include <string.h>
 #include <string>
 #include <vector>
 
@@ -23,7 +25,12 @@ void buf_append_dbl(Buffer& buf, double data);   // 8 bytes
 void buf_out_nil(Buffer& buf, uint8_t tag);
 void buf_out_str(Buffer& buf, uint8_t tag, char const* s, size_t size);
 void buf_out_int(Buffer& buf, uint8_t tag, int64_t value);
+void buf_out_dbl(Buffer& buf, uint8_t tag, double val);
+
+size_t buf_begin_arr(Buffer& buf, uint8_t tag);
 void buf_out_arr(Buffer& buf, uint8_t tag, uint32_t n);
+void buf_end_arr(Buffer& buf, uint8_t tag, size_t ctx, uint32_t n);
+
 void buf_out_err(Buffer& buf, uint8_t tag, uint32_t code, std::string const& msg);
 
 #endif

@@ -16,6 +16,7 @@ inline uint32_t max(uint32_t lhs, uint32_t rhs) { return lhs > rhs ? lhs : rhs; 
 inline void avl_update(AVLNode* node)
 {
     node->height = 1 + max(avl_height(node->left), avl_height(node->right));
+    node->subtree_size = 1 + avl_subtree_size(node->left) + avl_subtree_size(node->right);
 }
 
 inline AVLNode* rotate_left(AVLNode* node)
@@ -154,6 +155,43 @@ AVLNode* avl_del(AVLNode* node)
     *victim = *node;
 
     if (victim->left) {
-        victim->left->parent = parent;
+        victim->left->parent = victim;
     }
+
+    AVLNode** from = &root;
+    AVLNode* parent = node->parent;
+    if (parent) {
+        from = parent->left == node ? &parent->left : &parent->right;
+    }
+
+    *from = victim;
+
+    return root;
+}
+
+AVLNode* avl_offset(AVLNode* node, int64_t offset)
+{
+    int64_t pos = 0;
+
+    while (pos != offset) {
+        if (pos < offset && pos + avl_subtree_size(node) >= offset) {
+            node = node->right;
+            pos += avl_subtree_size(node->left) + 1;
+        } else if (pos > offset && pos - avl_subtree_size(node) <= offset) {
+            node = node->left;
+            pos -= avl_subtree_size(node->right) + 1;
+        } else {
+            AVLNode* parent = node->parent;
+            if (!parent)
+                return nullptr;
+
+            if (node == parent->left) {
+                pos += avl_subtree_size(node->right) + 1;
+            } else {
+                pos -= avl_subtree_size(node->left) + 1;
+            }
+        }
+    }
+
+    return node;
 }

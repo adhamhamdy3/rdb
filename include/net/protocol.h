@@ -23,6 +23,8 @@ size_t const MAX_ARGS = 200 * 1000;
 // error codes
 #define ERR_UNKNOWN 1 // unknown command
 #define ERR_TOO_BIG 2 // response too big
+#define ERR_BAD_TYP 3 // unexpected value type
+#define ERR_BAD_ARG 4 // bad args
 
 namespace Protocol {
 

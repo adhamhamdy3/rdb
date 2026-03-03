@@ -17,6 +17,14 @@ void process_command(std::vector<std::string> const& command, Buffer& buf, Datab
         do_del(command, buf, db);
     } else if (command.size() == 3 && command[0] == "set") {
         do_set(command, buf, db);
+    } else if (command.size() == 4 && command[0] == "zadd") {
+        do_zadd(command, buf, db);
+    } else if (command.size() == 3 && command[0] == "zrem") {
+        do_zrem(command, buf, db);
+    } else if (command.size() == 3 && command[0] == "zscore") {
+        do_zscore(command, buf, db);
+    } else if (command.size() == 6 && command[0] == "zquery") {
+        do_zquery(command, buf, db);
     } else {
         buf_out_err(buf, TAG_ERR, ERR_UNKNOWN, "unknown command.");
     }
