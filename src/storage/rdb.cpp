@@ -32,6 +32,15 @@ bool lk_entry_eq(HNode* node, HNode* key)
     return ent->key == keydata->key;
 }
 
+// FIXME:
+bool cb_keys(HNode* node, void* arg)
+{
+    Buffer& out = *(Buffer*)arg;
+    std::string const& key = container_of(node, Entry, node)->key;
+    buf_out_str(out, TAG_STR, key.data(), key.size());
+    return true;
+}
+
 ZSet* expect_zset(std::string const& key, HMap* hmap)
 {
     LookupKey lookup;
@@ -110,6 +119,13 @@ void do_del(std::vector<std::string> const& command, Buffer& buf, Database& db)
     }
 
     return buf_out_int(buf, TAG_INT, node ? 1 : 0);
+}
+
+// FIXME:
+void do_keys(std::vector<std::string> const& command, Buffer& buf, Database& db)
+{
+    buf_out_arr(buf, TAG_ARR, (uint32_t)hm_size(&db.hashmap));
+    hm_foreach(&db.hashmap, &cb_keys, (void*)&buf);
 }
 
 // zadd zset score name

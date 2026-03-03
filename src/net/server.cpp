@@ -17,6 +17,8 @@ void process_command(std::vector<std::string> const& command, Buffer& buf, Datab
         do_del(command, buf, db);
     } else if (command.size() == 3 && command[0] == "set") {
         do_set(command, buf, db);
+    } else if (command.size() == 1 && command[0] == "keys") {
+        do_keys(command, buf, db);
     } else if (command.size() == 4 && command[0] == "zadd") {
         do_zadd(command, buf, db);
     } else if (command.size() == 3 && command[0] == "zrem") {
