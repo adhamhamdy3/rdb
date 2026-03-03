@@ -38,45 +38,6 @@ bool zless(AVLNode* lnode, AVLNode* rnode)
     return zless(lnode, zr->name, zr->len, zr->score);
 }
 
-void zset_update(ZSet* zset, ZNode* node, double score)
-{
-    zset->root = avl_del(&node->tree);
-    avl_init(&node->tree);
-    node->score = score;
-    tree_insert(zset, node);
-}
-
-// avl insert
-void tree_insert(ZSet* zset, ZNode* node)
-{
-    AVLNode* parent = nullptr;
-    AVLNode** from = &zset->root;
-
-    while (*from) {
-        parent = *from;
-        from = zless(&node->tree, parent) ? &parent->left : &parent->right;
-    }
-
-    *from = &node->tree;
-    (*from)->parent = parent;
-
-    zset->root = avl_fix(*from);
-}
-
-void tree_dispose(AVLNode* node)
-{
-    if (!node) {
-        return;
-    }
-
-    tree_dispose(node->left);
-    tree_dispose(node->right);
-
-    znode_del(container_of(node, ZNode, tree));
-}
-
-// IMPLEMENTATIONS
-
 // the allocation function
 ZNode* znode_new(char const* name, size_t len, double score)
 {
@@ -100,6 +61,45 @@ void znode_del(ZNode* node)
 
     free(node);
 }
+
+// avl insert
+void tree_insert(ZSet* zset, ZNode* node)
+{
+    AVLNode* parent = nullptr;
+    AVLNode** from = &zset->root;
+
+    while (*from) {
+        parent = *from;
+        from = zless(&node->tree, parent) ? &parent->left : &parent->right;
+    }
+
+    *from = &node->tree;
+    (*from)->parent = parent;
+
+    zset->root = avl_fix(*from);
+}
+
+void zset_update(ZSet* zset, ZNode* node, double score)
+{
+    zset->root = avl_del(&node->tree);
+    avl_init(&node->tree);
+    node->score = score;
+    tree_insert(zset, node);
+}
+
+void tree_dispose(AVLNode* node)
+{
+    if (!node) {
+        return;
+    }
+
+    tree_dispose(node->left);
+    tree_dispose(node->right);
+
+    znode_del(container_of(node, ZNode, tree));
+}
+
+// IMPLEMENTATIONS
 
 bool zset_insert(ZSet* zset, char const* name, size_t len, double score)
 {
