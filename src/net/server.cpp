@@ -327,13 +327,13 @@ void event_loop(Server& server)
         for (size_t i = 1; i < server.sockets_list.size(); i++) {
             connection_state* conn = server.conn_state_map[server.sockets_list[i].fd];
 
-            reset_timers(server, conn);
-
             uint32_t revents = server.sockets_list[i].revents;
 
             if (revents == 0) {
-                continue;
+                continue; // no activity, don't reset timers
             }
+
+            reset_timers(server, conn); //  only reset on actual IO
 
             if (revents & POLLIN) {
                 assert(conn->want_read);
