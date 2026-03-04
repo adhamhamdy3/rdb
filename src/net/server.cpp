@@ -9,6 +9,54 @@ void socket_set_nb(int socket)
     fcntl(socket, F_SETFL, flags);
 }
 
+int32_t next_timer_ms(Server& server)
+{
+    if (dlist_isempty(&server.idle_queue)) {
+        return -1; // queue is empty, wait till a new connection arrives
+    }
+
+    connection_state* conn = container_of(server.idle_queue.next, connection_state, idle_node);
+    uint64_t next_ms = conn->last_active_ms + MAX_IDLE_TIMEOUT;
+    uint64_t now_ms = Timer::get_monotonic_msec();
+
+    if (next_ms <= now_ms) {
+        return 0; // already expired
+    }
+
+    return (int32_t)next_ms - now_ms;
+}
+
+void reset_timers(Server& server, connection_state* conn)
+{
+    dlist_detach(&conn->idle_node);
+    conn->last_active_ms = Timer::get_monotonic_msec();
+    dlist_insert_before(&server.idle_queue, &conn->idle_node);
+}
+
+void process_timers(Server& server)
+{
+    uint64_t now_ms = Timer::get_monotonic_msec();
+    while (!dlist_isempty(&server.idle_queue)) {
+        connection_state* conn = container_of(server.idle_queue.next, connection_state, idle_node);
+        int32_t next_ms = conn->last_active_ms + MAX_IDLE_TIMEOUT;
+
+        if (next_ms >= now_ms) {
+            break;
+        }
+
+        conn_destroy(server, conn);
+    }
+}
+
+void conn_destroy(Server& server, connection_state* conn)
+{
+    close(conn->tcp_socket);
+    server.conn_state_map[conn->tcp_socket] = nullptr;
+    dlist_detach(&conn->idle_node);
+
+    delete conn;
+}
+
 void process_command(std::vector<std::string> const& command, Buffer& buf, Database& db)
 {
     if (command.size() == 2 && command[0] == "get") {
@@ -74,7 +122,7 @@ bool try_one_request(connection_state* conn, Database& db)
     return true;
 }
 
-connection_state* handle_accept(int tcp_socket)
+connection_state* handle_accept(Server& server, int tcp_socket)
 {
     struct sockaddr_in client_socket = {};
     socklen_t client_address = sizeof(client_socket);
@@ -92,10 +140,15 @@ connection_state* handle_accept(int tcp_socket)
     // set this connection socket to non-blocking
     socket_set_nb(connection_socket);
 
+    // TODO: conn_state_init
     // create connection state for this socket
     connection_state* conn = new connection_state();
     conn->tcp_socket = connection_socket;
     conn->want_read = true; // read the first request
+
+    // timers
+    conn->last_active_ms = Timer::get_monotonic_msec();
+    dlist_insert_before(&server.idle_queue, &conn->idle_node);
 
     return conn;
 }
@@ -104,6 +157,7 @@ connection_state* handle_accept(int tcp_socket)
 void handle_read(connection_state* conn, Database& db)
 {
     uint8_t buffer[64 * 1024];
+    // TODO: set timeout for read
     ssize_t ret_val = read(conn->tcp_socket, buffer, sizeof(buffer));
     if (ret_val < 0 && errno == EAGAIN) {
         return; // not ready
@@ -150,6 +204,7 @@ void handle_write(connection_state* conn)
 {
     assert(conn->outgoing.data.size() > 0);
 
+    // TODO: set timeout for write
     int ret_val = write(conn->tcp_socket, conn->outgoing.data.data(), conn->outgoing.data.size());
     if (ret_val < 0 && errno == EAGAIN) {
         return; // not ready
@@ -210,6 +265,7 @@ void server_start_listen(Server& server)
 
     Logger::alert("server is listening...");
 
+    dlist_init(&server.idle_queue);
     event_loop(server);
 }
 
@@ -241,8 +297,10 @@ void event_loop(Server& server)
             server.sockets_list.push_back(sock);
         }
 
-        /// blocking - check all sockets receive/send buffers or TCP errors
-        int ret_val = poll(server.sockets_list.data(), (nfds_t)server.sockets_list.size(), -1);
+        /// blocking - check all sockets receive/send buffers or TCP errors, -1 wait forever
+        /// timeout option: "wake me up in at most X milliseconds, even if no IO is ready."
+        int32_t timeout_ms = next_timer_ms(server);
+        int ret_val = poll(server.sockets_list.data(), (nfds_t)server.sockets_list.size(), timeout_ms);
         if (ret_val < 0 && errno == EINTR) { // nothing is ready rn
             continue;
         }
@@ -253,7 +311,8 @@ void event_loop(Server& server)
         if (server.sockets_list[0].revents & POLLIN) {
             int listening_socket = server.sockets_list[0].fd;
 
-            connection_state* conn = handle_accept(listening_socket);
+            connection_state* conn = handle_accept(server, listening_socket);
+            // TODO: migrate to handle_accept()
             if (conn) {
                 if (server.conn_state_map.size() <= (size_t)conn->tcp_socket) {
                     server.conn_state_map.resize(conn->tcp_socket + 1, nullptr);
@@ -267,6 +326,9 @@ void event_loop(Server& server)
         // handle connection socket
         for (size_t i = 1; i < server.sockets_list.size(); i++) {
             connection_state* conn = server.conn_state_map[server.sockets_list[i].fd];
+
+            reset_timers(server, conn);
+
             uint32_t revents = server.sockets_list[i].revents;
 
             if (revents == 0) {
@@ -284,10 +346,10 @@ void event_loop(Server& server)
             }
 
             if ((revents & POLLERR) || conn->want_close) {
-                close(conn->tcp_socket);
-                server.conn_state_map[conn->tcp_socket] = nullptr;
-                delete conn;
+                conn_destroy(server, conn);
             }
         }
+
+        process_timers(server);
     }
 }
