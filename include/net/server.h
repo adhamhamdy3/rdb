@@ -68,9 +68,14 @@ struct Server {
     /// fds (sockets) on unix are allocated to the smallest available non-negative integer
     /// so mapping using simple arrays could not be more efficient
     std::vector<connection_state*> conn_state_map;
-    DList idle_queue;
 
     std::vector<struct pollfd> sockets_list;
+
+    // timers for idle connections
+    DList idle_queue;
+
+    // timers for TTLs
+    Heap heap;
 
     Database db;
 };

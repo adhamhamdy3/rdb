@@ -13,6 +13,8 @@ void entry_del(Entry* entry)
         zset_clear(&entry->zset);
     }
 
+    // TODO: entry_set_ttl(entry, -1); // remove from heap
+
     delete entry;
 }
 

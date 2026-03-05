@@ -9,21 +9,39 @@ void socket_set_nb(int socket)
     fcntl(socket, F_SETFL, flags);
 }
 
+// TODO: migrate timers
+
 int32_t next_timer_ms(Server& server)
 {
-    if (dlist_isempty(&server.idle_queue)) {
-        return -1; // queue is empty, wait till a new connection arrives
+    // TODO: separate
+    uint64_t now_ms = Timer::get_monotonic_msec();
+    uint64_t next_ms = (uint64_t)-1; // infinity
+
+    // check idle connections
+    if (!dlist_isempty(&server.idle_queue)) {
+        connection_state* conn = container_of(server.idle_queue.next, connection_state, idle_node);
+        next_ms = conn->last_active_ms + MAX_IDLE_TIMEOUT;
     }
 
-    connection_state* conn = container_of(server.idle_queue.next, connection_state, idle_node);
-    uint64_t next_ms = conn->last_active_ms + MAX_IDLE_TIMEOUT;
-    uint64_t now_ms = Timer::get_monotonic_msec();
+    // check TTLs timers
+    if (!server.heap.heap_arr.empty() && server.heap.heap_arr[0].value < next_ms) {
+        next_ms = server.heap.heap_arr[0].value;
+    }
+
+    if (next_ms == (uint64_t)-1) {
+        return -1; // no timers, wait
+    }
 
     if (next_ms <= now_ms) {
-        return 0; // already expired
+        return 0;
     }
 
-    return (int32_t)next_ms - now_ms;
+    return int32_t(next_ms - now_ms);
+}
+
+bool hnode_equal(HNode* l, HNode* r)
+{
+    return l == r;
 }
 
 void reset_timers(Server& server, connection_state* conn)
@@ -35,6 +53,9 @@ void reset_timers(Server& server, connection_state* conn)
 
 void process_timers(Server& server)
 {
+    // TODO: separate
+
+    // idle timers
     uint64_t now_ms = Timer::get_monotonic_msec();
     while (!dlist_isempty(&server.idle_queue)) {
         connection_state* conn = container_of(server.idle_queue.next, connection_state, idle_node);
@@ -44,7 +65,36 @@ void process_timers(Server& server)
             break;
         }
 
+        fprintf(stderr, "closing idle connection: %d\n", conn->tcp_socket);
         conn_destroy(server, conn);
+    }
+
+    // TTL timers
+    size_t const max_work = 2000;
+    size_t works = 0;
+
+    auto const& heap_arr = server.heap.heap_arr;
+    while (!heap_arr.empty() && heap_arr[0].value < now_ms && works++ < max_work) {
+        Entry* entry = container_of(heap_arr[0].ref, Entry, heap_idx);
+
+        HNode* hnode = hm_delete(&server.db.hashmap, &entry->node, hnode_equal);
+        assert(hnode == &entry->node);
+
+        fprintf(stderr, "key expired: %s\n", entry->key.c_str());
+
+        entry_del(entry);
+    }
+}
+
+void entry_set_ttl(Server& server, Entry* entry, int64_t ttl_ms)
+{
+    if (ttl_ms < 0 && entry->heap_idx != (size_t)-1) {
+        // negtive TTL means remove it
+        heap_delete(server.heap, entry->heap_idx);
+        entry->heap_idx = -1;
+    } else if (ttl_ms >= 0) {
+        uint64_t expires_at = ttl_ms + Timer::get_monotonic_msec();
+        heap_insert(server.heap, expires_at, &entry->heap_idx);
     }
 }
 
