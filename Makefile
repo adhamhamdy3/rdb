@@ -1,7 +1,7 @@
 CXX      := g++
 CXXFLAGS := -std=c++23 -g -Iinclude -Ilib
 
-COMMON_SRC := src/net/client.cpp src/net/server.cpp \
+COMMON_SRC := src/net/client.cpp src/net/server.cpp src/net/timers.cpp \
               src/storage/hashtable.cpp src/storage/rdb.cpp \
 			  src/net/protocol.cpp src/storage/buffer.cpp \
 			  src/storage/avl.cpp src/storage/zset.cpp \

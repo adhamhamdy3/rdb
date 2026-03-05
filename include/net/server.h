@@ -14,6 +14,7 @@
 // Utils
 #include "log/logger.h"
 #include "timer.h"
+#include "net/timers.h"
 
 // Storage
 #include "storage/list.h"
@@ -42,7 +43,6 @@ struct pollfd {
 };
 */
 
-uint64_t const MAX_IDLE_TIMEOUT = 5000; // 5 sec
 
 struct connection_state {
     int tcp_socket = -1;
@@ -86,6 +86,8 @@ void event_loop(Server& server);
 
 connection_state* conn_new(Server& server, int connection_socket);
 void conn_destroy(Server& server, connection_state* conn);
+
+bool hnode_equal(HNode* l, HNode* r);
 
 void process_command(std::vector<std::string> const& command, Buffer& buf, Database& db);
 
