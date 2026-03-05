@@ -98,6 +98,18 @@ void entry_set_ttl(Server& server, Entry* entry, int64_t ttl_ms)
     }
 }
 
+connection_state* conn_new(Server& server, int connection_socket)
+{
+    // create connection state for this socket
+    connection_state* conn = new connection_state();
+    conn->tcp_socket = connection_socket;
+    conn->want_read = true; // read the first request
+
+    // timers
+    conn->last_active_ms = Timer::get_monotonic_msec();
+    dlist_insert_before(&server.idle_queue, &conn->idle_node);
+}
+
 void conn_destroy(Server& server, connection_state* conn)
 {
     close(conn->tcp_socket);
@@ -190,15 +202,16 @@ connection_state* handle_accept(Server& server, int tcp_socket)
     // set this connection socket to non-blocking
     socket_set_nb(connection_socket);
 
-    // TODO: conn_state_init
-    // create connection state for this socket
-    connection_state* conn = new connection_state();
-    conn->tcp_socket = connection_socket;
-    conn->want_read = true; // read the first request
+    connection_state* conn = conn_new(server, connection_socket);
 
-    // timers
-    conn->last_active_ms = Timer::get_monotonic_msec();
-    dlist_insert_before(&server.idle_queue, &conn->idle_node);
+    if (conn) {
+        if (server.conn_state_map.size() <= (size_t)conn->tcp_socket) {
+            server.conn_state_map.resize(conn->tcp_socket + 1, nullptr);
+        }
+
+        assert(!server.conn_state_map[conn->tcp_socket]);
+        server.conn_state_map[conn->tcp_socket] = conn;
+    }
 
     return conn;
 }
@@ -362,15 +375,6 @@ void event_loop(Server& server)
             int listening_socket = server.sockets_list[0].fd;
 
             connection_state* conn = handle_accept(server, listening_socket);
-            // TODO: migrate to handle_accept()
-            if (conn) {
-                if (server.conn_state_map.size() <= (size_t)conn->tcp_socket) {
-                    server.conn_state_map.resize(conn->tcp_socket + 1, nullptr);
-                }
-
-                assert(!server.conn_state_map[conn->tcp_socket]);
-                server.conn_state_map[conn->tcp_socket] = conn;
-            }
         }
 
         // handle connection socket

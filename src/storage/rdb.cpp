@@ -60,7 +60,6 @@ ZSet* expect_zset(std::string const& key, HMap* hmap)
     return entry->type == T_ZSET ? &entry->zset : nullptr;
 }
 
-// TODO: use LookupKey instead of Entry
 void do_get(std::vector<std::string> const& command, Buffer& buf, Database& db)
 {
     LookupKey lk;

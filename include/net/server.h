@@ -44,7 +44,6 @@ struct pollfd {
 
 uint64_t const MAX_IDLE_TIMEOUT = 5000; // 5 sec
 
-// TODO: separate header
 struct connection_state {
     int tcp_socket = -1;
 
@@ -85,7 +84,7 @@ void init_server_address(Server& server, uint16_t port_number, uint32_t ip_addre
 void server_start_listen(Server& server);
 void event_loop(Server& server);
 
-// conn_state_init
+connection_state* conn_new(Server& server, int connection_socket);
 void conn_destroy(Server& server, connection_state* conn);
 
 void process_command(std::vector<std::string> const& command, Buffer& buf, Database& db);
