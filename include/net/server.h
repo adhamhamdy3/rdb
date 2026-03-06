@@ -3,6 +3,7 @@
 
 // Networking
 #include "net/protocol.h"
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/ip.h>
 #include <poll.h>

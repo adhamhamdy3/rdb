@@ -85,7 +85,7 @@ int32_t Protocol::deserialize_request(uint8_t const* request, uint32_t size, std
 int32_t parse_response(uint8_t const* data, size_t size)
 {
     if (size < 1) {
-        Logger::alert("bad response");
+        fprintf(stderr, "%s\n", "bad response");
         return -1;
     }
 
@@ -102,7 +102,7 @@ int32_t parse_response(uint8_t const* data, size_t size)
         return Parser::parse_dbl(data, size);
     case TAG_ARR: {
         if (size < 1 + 4) {
-            Logger::alert("bad response");
+            fprintf(stderr, "%s\n", "bad response");
             return -1;
         }
         uint32_t len = 0;
@@ -122,7 +122,7 @@ int32_t parse_response(uint8_t const* data, size_t size)
         return (int32_t)arr_bytes;
     }
     default:
-        Logger::alert("bad response");
+        fprintf(stderr, "%s\n", "bad response");
         return -1;
     }
 }
@@ -134,7 +134,7 @@ int32_t Protocol::deserialize_response(Buffer const& buffer)
     memcpy(&size, buffer.data.data(), 4);
 
     if (size < 1) {
-        Logger::alert("bad response");
+        fprintf(stderr, "%s\n", "bad response");
         return -1;
     }
 

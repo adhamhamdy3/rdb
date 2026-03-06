@@ -17,7 +17,7 @@ inline int32_t parse_nil(uint8_t const* data, uint32_t size)
 inline int32_t parse_err(uint8_t const* data, uint32_t size)
 {
     if (size < 1 + 8) {
-        Logger::alert("bad response");
+        fprintf(stderr, "%s\n", "bad response");
         return -1;
     }
     int32_t code = 0;
@@ -25,7 +25,7 @@ inline int32_t parse_err(uint8_t const* data, uint32_t size)
     memcpy(&code, data + 1, 4);
     memcpy(&len, data + 1 + 4, 4);
     if (size < 1 + 8 + len) {
-        Logger::alert("bad response");
+        fprintf(stderr, "%s\n", "bad response");
         return -1;
     }
     printf("(err) %d %.*s\n", code, len, data + 1 + 8);
@@ -35,13 +35,13 @@ inline int32_t parse_err(uint8_t const* data, uint32_t size)
 inline int32_t parse_str(uint8_t const* data, uint32_t size)
 {
     if (size < 1 + 4) {
-        Logger::alert("bad response");
+        fprintf(stderr, "%s\n", "bad response");
         return -1;
     }
     uint32_t len = 0;
     memcpy(&len, data + 1, 4);
     if (size < 1 + 4 + len) {
-        Logger::alert("bad response");
+        fprintf(stderr, "%s\n", "bad response");
         return -1;
     }
     printf("(str) %.*s\n", len, data + 1 + 4);
@@ -51,7 +51,7 @@ inline int32_t parse_str(uint8_t const* data, uint32_t size)
 inline int32_t parse_int(uint8_t const* data, uint32_t size)
 {
     if (size < 1 + 8) {
-        Logger::alert("bad response");
+        fprintf(stderr, "%s\n", "bad response");
         return -1;
     }
     int64_t val = 0;
@@ -63,7 +63,7 @@ inline int32_t parse_int(uint8_t const* data, uint32_t size)
 inline int32_t parse_dbl(uint8_t const* data, uint32_t size)
 {
     if (size < 1 + 8) {
-        Logger::alert("bad response");
+        fprintf(stderr, "%s\n", "bad response");
         return -1;
     }
     double val = 0;

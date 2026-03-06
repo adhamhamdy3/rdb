@@ -74,7 +74,7 @@ bool try_one_request(connection_state* conn, Database& db)
     uint32_t len = 0;
     memcpy(&len, conn->incoming.data.data(), 4);
     if (len > SMAX_MSG_LENGTH) {
-        Logger::alert("message too long");
+        fprintf(stderr, "%s\n", "message too long");
         conn->want_close = true;
         return false;
     }
@@ -88,7 +88,7 @@ bool try_one_request(connection_state* conn, Database& db)
 
     std::vector<std::string> command;
     if (Protocol::deserialize_request(request, len, command) < 0) {
-        Logger::alert("bad request");
+        fprintf(stderr, "%s\n", "bad request");
         conn->want_close = true;
         return false;
     }
@@ -149,7 +149,7 @@ void handle_read(connection_state* conn, Database& db)
     }
 
     if (ret_val < 0) {
-        Logger::alert("read() error");
+        fprintf(stderr, "%s\n", "read() error");
         conn->want_close = true;
         return;
     }
@@ -157,9 +157,9 @@ void handle_read(connection_state* conn, Database& db)
     // handle EOF
     if (ret_val == 0) {
         if (conn->incoming.data.size() == 0) {
-            Logger::alert("client closed");
+            fprintf(stderr, "%s\n", "client closed");
         } else {
-            Logger::alert("unexpected EOF");
+            fprintf(stderr, "%s\n", "unexpected EOF");
         }
         conn->want_close = true;
         return;
@@ -196,7 +196,7 @@ void handle_write(connection_state* conn)
     }
 
     if (ret_val < 0) {
-        Logger::alert("write() error");
+        fprintf(stderr, "%s\n", "write() error");
         conn->want_close = true;
         return;
     }
@@ -248,7 +248,9 @@ void server_start_listen(Server& server)
         Logger::log_error("listen()");
     }
 
-    Logger::alert("server is listening...");
+    char ip_str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &server.address.sin_addr, ip_str, sizeof(ip_str));
+    fprintf(stderr, "server is listening on %s:%u\n", ip_str, ntohs(server.address.sin_port));
 
     dlist_init(&server.db.idle_queue);
     event_loop(server);

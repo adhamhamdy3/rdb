@@ -20,6 +20,10 @@ void client_connect_to(Client& client, u_int32_t ip_address, uint16_t port_numbe
     if (ret_val) {
         Logger::log_error("connect()");
     }
+
+    char ip_str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &client.curr_server.address.sin_addr, ip_str, sizeof(ip_str));
+    fprintf(stderr, "connected to %s:%u\n", ip_str, port_number);
 }
 
 int32_t send_request(Client const& client, std::vector<std::string> const& command)
@@ -38,14 +42,14 @@ int32_t recv_response(Client const& client)
     errno = 0;
     int32_t ret_val = NetworkIO::read_n(client.socket, rbuffer.data.data(), 4);
     if (ret_val != 4) {
-        Logger::alert(errno == 0 ? "EOF" : "read() error");
+        fprintf(stderr, "%s\n", errno == 0 ? "EOF" : "read() error");
         return ret_val;
     }
 
     uint32_t len = 0;
     memcpy(&len, rbuffer.data.data(), 4);
     if (len > CMAX_MSG_LENGTH) {
-        Logger::alert("payload is too long");
+        fprintf(stderr, "%s\n", "payload is too long");
         return -1;
     }
 
@@ -54,7 +58,7 @@ int32_t recv_response(Client const& client)
 
     ret_val = NetworkIO::read_n(client.socket, &rbuffer.data[4], len);
     if (ret_val != len) {
-        Logger::alert("read(): error");
+        fprintf(stderr, "%s\n", "read(): error");
         return -1;
     }
 

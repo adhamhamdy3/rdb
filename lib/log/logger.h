@@ -7,11 +7,6 @@
 
 namespace Logger {
 
-inline void alert(char const* msg)
-{
-    fprintf(stderr, "%s\n", msg);
-}
-
 inline void log_error(char const* msg)
 {
     int err = errno;
