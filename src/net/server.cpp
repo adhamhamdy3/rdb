@@ -24,6 +24,8 @@ connection_state* conn_new(Server& server, int connection_socket)
     // timers
     conn->last_active_ms = Timer::get_monotonic_msec();
     dlist_insert_before(&server.idle_queue, &conn->idle_node);
+
+    return conn;
 }
 
 void conn_destroy(Server& server, connection_state* conn)

@@ -64,6 +64,7 @@ void process_timers(Server& server)
         fprintf(stderr, "key expired: %s\n", entry->key.c_str());
 
         entry_del(entry);
+        entry_set_ttl(server, entry, -1); // remove from heap
     }
 }
 
