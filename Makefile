@@ -7,13 +7,13 @@ COMMON_SRC := src/net/client.cpp src/net/server.cpp src/net/timers.cpp \
 			  src/storage/core/avl.cpp src/storage/zset.cpp \
 			  src/storage/core/list.cpp src/storage/core/heap.cpp src/storage/entry.cpp
 
-all: redis_server redis_client
+all: rdb client
 
-redis_server: redis_server.cpp $(COMMON_SRC)
+rdb: redis_server.cpp $(COMMON_SRC)
 	@$(CXX) $(CXXFLAGS) -o $@ $^
 
-redis_client: redis_client.cpp $(COMMON_SRC)
+client: redis_client.cpp $(COMMON_SRC)
 	@$(CXX) $(CXXFLAGS) -o $@ $^
 
 clean:
-	@rm -f redis_server redis_client
+	@rm -f rdb client
