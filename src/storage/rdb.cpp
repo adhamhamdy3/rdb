@@ -1,37 +1,5 @@
 #include "storage/rdb.h"
 
-Entry* entry_new(uint32_t type)
-{
-    Entry* entry = new Entry();
-    entry->type = type;
-    return entry;
-}
-
-void entry_del(Entry* entry)
-{
-    if (entry->type == T_ZSET) {
-        zset_clear(&entry->zset);
-    }
-
-    delete entry;
-}
-
-bool entry_eq(HNode* lnode, HNode* rnode)
-{
-    struct Entry* l = container_of(lnode, struct Entry, node);
-    struct Entry* r = container_of(rnode, struct Entry, node);
-
-    return l->key == r->key;
-}
-
-bool lk_entry_eq(HNode* node, HNode* key)
-{
-    Entry* ent = container_of(node, Entry, node);
-    LookupKey* keydata = container_of(key, LookupKey, node);
-
-    return ent->key == keydata->key;
-}
-
 // FIXME:
 bool cb_keys(HNode* node, void* arg)
 {
@@ -48,7 +16,7 @@ ZSet* expect_zset(std::string const& key, HMap* hmap)
     lookup.key = key;
     lookup.node.hcode = str_hash((uint8_t const*)key.data(), key.size());
 
-    HNode* hnode = hm_lookup(hmap, &lookup.node, lk_entry_eq);
+    HNode* hnode = hm_lookup(hmap, &lookup.node, entry_eq);
     if (!hnode) {
         return nullptr;
     }
@@ -58,14 +26,13 @@ ZSet* expect_zset(std::string const& key, HMap* hmap)
     return entry->type == T_ZSET ? &entry->zset : nullptr;
 }
 
-// TODO: use LookupKey instead of Entry
 void do_get(std::vector<std::string> const& command, Buffer& buf, Database& db)
 {
     LookupKey lk;
     lk.key = command[1];
     lk.node.hcode = str_hash((uint8_t const*)lk.key.data(), lk.key.size());
 
-    HNode* node = hm_lookup(&db.hashmap, &lk.node, lk_entry_eq);
+    HNode* node = hm_lookup(&db.hashmap, &lk.node, entry_eq);
     if (!node) {
         return buf_out_nil(buf, TAG_NIL);
     }
@@ -85,7 +52,7 @@ void do_set(std::vector<std::string> const& command, Buffer& buf, Database& db)
     lk.key = command[1];
     lk.node.hcode = str_hash((uint8_t const*)lk.key.data(), lk.key.size());
 
-    HNode* node = hm_lookup(&db.hashmap, &lk.node, lk_entry_eq);
+    HNode* node = hm_lookup(&db.hashmap, &lk.node, entry_eq);
 
     if (node) { // already exist in the database, update the value
         Entry* entry = container_of(node, Entry, node);
@@ -94,7 +61,7 @@ void do_set(std::vector<std::string> const& command, Buffer& buf, Database& db)
         }
         entry->value = command[2];
     } else { // not found, insert new kv pair
-        Entry* e = entry_new(TAG_STR);
+        Entry* e = entry_new(T_STR);
 
         e->key = lk.key;
         e->node.hcode = lk.node.hcode;
@@ -112,7 +79,7 @@ void do_del(std::vector<std::string> const& command, Buffer& buf, Database& db)
     lk.key = command[1];
     lk.node.hcode = str_hash((uint8_t const*)lk.key.data(), lk.key.size());
 
-    HNode* node = hm_delete(&db.hashmap, &lk.node, lk_entry_eq);
+    HNode* node = hm_delete(&db.hashmap, &lk.node, entry_eq);
 
     if (node) {
         delete container_of(node, Entry, node);
@@ -141,7 +108,7 @@ void do_zadd(std::vector<std::string> const& command, Buffer& buf, Database& db)
     lk.key = command[1];
     lk.node.hcode = str_hash((uint8_t const*)lk.key.data(), lk.key.size());
 
-    HNode* hnode = hm_lookup(&db.hashmap, &lk.node, lk_entry_eq);
+    HNode* hnode = hm_lookup(&db.hashmap, &lk.node, entry_eq);
 
     Entry* entry = nullptr;
     if (!hnode) { // does not exist yet, create a new ZSet entry

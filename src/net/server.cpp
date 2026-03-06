@@ -9,43 +9,23 @@ void socket_set_nb(int socket)
     fcntl(socket, F_SETFL, flags);
 }
 
-int32_t next_timer_ms(Server& server)
+bool hnode_equal(HNode* l, HNode* r)
 {
-    if (dlist_isempty(&server.idle_queue)) {
-        return -1; // queue is empty, wait till a new connection arrives
-    }
-
-    connection_state* conn = container_of(server.idle_queue.next, connection_state, idle_node);
-    uint64_t next_ms = conn->last_active_ms + MAX_IDLE_TIMEOUT;
-    uint64_t now_ms = Timer::get_monotonic_msec();
-
-    if (next_ms <= now_ms) {
-        return 0; // already expired
-    }
-
-    return (int32_t)next_ms - now_ms;
+    return l == r;
 }
 
-void reset_timers(Server& server, connection_state* conn)
+connection_state* conn_new(Server& server, int connection_socket)
 {
-    dlist_detach(&conn->idle_node);
+    // create connection state for this socket
+    connection_state* conn = new connection_state();
+    conn->tcp_socket = connection_socket;
+    conn->want_read = true; // read the first request
+
+    // timers
     conn->last_active_ms = Timer::get_monotonic_msec();
     dlist_insert_before(&server.idle_queue, &conn->idle_node);
-}
 
-void process_timers(Server& server)
-{
-    uint64_t now_ms = Timer::get_monotonic_msec();
-    while (!dlist_isempty(&server.idle_queue)) {
-        connection_state* conn = container_of(server.idle_queue.next, connection_state, idle_node);
-        int32_t next_ms = conn->last_active_ms + MAX_IDLE_TIMEOUT;
-
-        if (next_ms >= now_ms) {
-            break;
-        }
-
-        conn_destroy(server, conn);
-    }
+    return conn;
 }
 
 void conn_destroy(Server& server, connection_state* conn)
@@ -140,15 +120,16 @@ connection_state* handle_accept(Server& server, int tcp_socket)
     // set this connection socket to non-blocking
     socket_set_nb(connection_socket);
 
-    // TODO: conn_state_init
-    // create connection state for this socket
-    connection_state* conn = new connection_state();
-    conn->tcp_socket = connection_socket;
-    conn->want_read = true; // read the first request
+    connection_state* conn = conn_new(server, connection_socket);
 
-    // timers
-    conn->last_active_ms = Timer::get_monotonic_msec();
-    dlist_insert_before(&server.idle_queue, &conn->idle_node);
+    if (conn) {
+        if (server.conn_state_map.size() <= (size_t)conn->tcp_socket) {
+            server.conn_state_map.resize(conn->tcp_socket + 1, nullptr);
+        }
+
+        assert(!server.conn_state_map[conn->tcp_socket]);
+        server.conn_state_map[conn->tcp_socket] = conn;
+    }
 
     return conn;
 }
@@ -312,15 +293,6 @@ void event_loop(Server& server)
             int listening_socket = server.sockets_list[0].fd;
 
             connection_state* conn = handle_accept(server, listening_socket);
-            // TODO: migrate to handle_accept()
-            if (conn) {
-                if (server.conn_state_map.size() <= (size_t)conn->tcp_socket) {
-                    server.conn_state_map.resize(conn->tcp_socket + 1, nullptr);
-                }
-
-                assert(!server.conn_state_map[conn->tcp_socket]);
-                server.conn_state_map[conn->tcp_socket] = conn;
-            }
         }
 
         // handle connection socket
