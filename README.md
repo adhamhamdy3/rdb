@@ -1,151 +1,123 @@
-# rdb — Redis-like Database Engine
+# rdb
 
-> **Work in Progress** — This project is under active development. The current `master` branch is functional and supports the core key-value operations described below. Additional features and refinements are ongoing.
+A Redis-compatible in-memory key-value database server written in C/C++, built from scratch. It implements custom core data structures, a binary serialization protocol, and an asynchronous single-threaded event loop — without relying on the STL for its internals.
 
----
+## Features
 
-## Overview
+- **Custom data structures** — intrusive doubly linked lists, hash maps, AVL trees, and a min-heap, all implemented from scratch
+- **Binary protocol** — custom tagged serialization (`TAG_STR`, `TAG_INT`, `TAG_ARR`, etc.) over TCP rather than RESP
+- **Async event loop** — single-threaded, `poll()`-based multiplexing with non-blocking I/O and read/write state machines
+- **Supported types** — string key-value pairs and sorted sets (ZSet)
+- **TTL / expiration** — per-key millisecond TTL backed by a min-heap; expired keys are evicted on each event loop tick
+- **Idle connection timeouts** — connections inactive for more than 5 seconds are automatically closed via an intrusive idle queue
 
-**rdb** is a lightweight, Redis-compatible in-memory key-value store written in C/C++. It implements a non-blocking, event-driven TCP server capable of handling multiple concurrent client connections using `poll(2)`, backed by a custom progressive hash map for O(1) average-case data operations.
+## Project Structure
 
-The project is designed for learning and exploration of low-level systems programming — including network I/O, custom data structures, and binary protocol design.
+```
+.
+├── redis_server.cpp        # Server entry point
+├── redis_client.cpp        # Client entry point
+├── src/
+│   ├── net/                # server, client, protocol, timers
+│   └── storage/
+│       ├── core/           # hashtable, avl, heap, list
+│       ├── rdb.cpp         # core database logic and command dispatch
+│       ├── zset.cpp        # sorted set operations
+│       ├── buffer.cpp      # I/O buffer management
+│       └── entry.cpp       # key-value entry representation
+└── include/                # header files mirroring src/ layout
+```
 
----
+## Supported Commands
 
-## Features (Current `master`)
+### Key-Value (String)
 
-| Feature | Status |
+| Command | Description |
 |---|---|
-| TCP server with non-blocking I/O via `poll` | Done |
-| Multiple concurrent client connections | Done |
-| Custom binary request/response protocol | Done |
-| `GET` — retrieve a value by key | Done |
-| `SET` — insert or update a key-value pair | Done |
-| `DEL` — delete a key | Done |
-| Custom progressive hash map (incremental rehashing) | Done |
-| AVL tree implementation | In Progress |
-| Docker support | Done |
+| `set <key> <value>` | Store a string value |
+| `get <key>` | Retrieve a string value |
+| `del <key>` | Delete a key (any type); returns `1` if removed, `0` if not found |
+| `keys` | Return all keys (O(N)) |
 
----
+### Sorted Set (ZSet)
 
-## Architecture
+| Command | Description |
+|---|---|
+| `zadd <key> <score> <name>` | Add or update a member with a float score |
+| `zrem <key> <name>` | Remove a member |
+| `zscore <key> <name>` | Get the score of a member |
+| `zquery <key> <score> <name> <offset> <limit>` | Range query from a lower bound; returns alternating `name, score` pairs |
 
-```
-rdb/
-├── redis_server.cpp          # Server entry point
-├── redis_client.cpp          # Client entry point
-│
-├── include/                  # Public headers
-│   ├── net/
-│   │   ├── server.h          # Server struct & event-loop interface
-│   │   ├── client.h          # Client connection interface
-│   │   └── protocol.h        # Type tags, error codes, serialization API
-│   └── storage/
-│       ├── rdb.h             # Database struct & command handlers
-│       ├── hashtable.h       # HTable / HMap data structures
-│       ├── avl.h             # AVL tree
-│       └── buffer.h          # I/O ring buffer
-│
-├── src/                      # Implementations
-│   ├── net/
-│   │   ├── server.cpp        # Event loop, connection state machine
-│   │   ├── client.cpp        # Client send/recv logic
-│   │   └── protocol.cpp      # Request serialization / response deserialization
-│   └── storage/
-│       ├── rdb.cpp           # GET / SET / DEL handlers
-│       ├── hashtable.cpp     # Progressive rehashing hash map
-│       ├── avl.cpp           # AVL tree rotations & balancing
-│       └── buffer.cpp        # Buffer read/write helpers
-│
-└── lib/                      # Internal utility libraries
-    ├── io/
-    │   ├── network_io.h      # Low-level socket read/write helpers
-    │   ├── buffer_util.h     # Buffer utility functions
-    │   └── parser.h          # Binary request parser
-    └── log/
-        └── logger.h          # Lightweight logger
-```
+### Expiration
 
-### Key Design Decisions
+| Command | Description |
+|---|---|
+| `pexpire <key> <ttl_ms>` | Set a TTL in milliseconds |
+| `pttl <key>` | Get remaining TTL in ms; `-1` if no expiry, `-2` if key missing |
 
-- **Non-blocking I/O with `poll`** — The server uses a single-threaded event loop. Each client connection is tracked by a `connection_state` struct holding incoming/outgoing `Buffer`s and I/O flags (`want_read`, `want_write`, `want_close`). This avoids the complexity of threads while still serving multiple clients concurrently.
+## Building Locally
 
-- **Progressive Rehashing** — The `HMap` structure maintains two internal `HTable`s (`older` and `newer`). When a resize threshold is hit, entries are migrated incrementally across requests (tracked via `migrate_pos`), avoiding stop-the-world rehashing latency spikes.
-
-- **Custom Binary Protocol** — Requests and responses are length-prefixed binary frames (not plaintext). Type tags (`NIL`, `ERR`, `STR`, `INT`, `DBL`, `ARR`) allow the protocol to carry typed responses. Max server message size is 32 MiB; max client message is 4 KiB.
-
-- **FNV Hash** — Keys are hashed using the FNV-1a algorithm for fast, well-distributed hashing.
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- `g++` with C++23 support (GCC 13+ recommended)
-- GNU `make`
-
-### Build
+**Requirements:** GCC/G++, `make`
 
 ```bash
-make
+make          # builds both ./rdb (server) and ./client
+make clean    # removes build artifacts
 ```
 
-This produces two binaries: `redis_server` and `redis_client`.
-
-### Run the Server
+Run the server:
 
 ```bash
-./redis_server
+./rdb --host 0.0.0.0 --port 1234
 ```
 
-The server starts listening on **port 1234** by default.
-
-### Use the Client
-
-Send commands from a separate terminal:
+Run the client:
 
 ```bash
-./redis_client set foo bar
-./redis_client get foo
-./redis_client del foo
+./client --host 127.0.0.1 --port 1234
 ```
 
-### Clean Build Artifacts
+## Running with Docker
+
+**Requirements:** Docker, Docker Compose
+
+### Start the server
 
 ```bash
-make clean
+docker compose up server
 ```
 
----
+The server will be available at `localhost:1234`.
 
-## Docker
-
-A multi-stage `Dockerfile` is provided. It builds the server using GCC 13 and packages the resulting binary into a slim Debian image.
+### Run the client
 
 ```bash
-# Build the image
+docker compose run --rm client
+```
+
+Starts an interactive client session connected to the running server.
+
+### Build the image manually
+
+```bash
 docker build -t rdb .
-
-# Run the server (exposes port 1234)
 docker run -p 1234:1234 rdb
 ```
 
----
+## Configuration
 
-## Project Status & Roadmap
+| Flag | Default | Description |
+|---|---|---|
+| `--host` | `127.0.0.1` | Address to bind (server) or connect to (client) |
+| `--port` | `1234` | Port to bind or connect on |
 
-This project is still a work in progress. Planned additions include:
+## Architecture Notes
 
-- `KEYS` command — list all stored keys
-- TTL / key expiry support
-- Sorted sets backed by the AVL tree
-- Persistence (RDB snapshots / AOF logging)
-- Full RESP3 protocol compatibility
-- Thread pool for parallel command execution
+**Event loop** — `event_loop()` in `server.h` uses `poll()` to multiplex all connections on a single thread. Connection state is managed via `conn_state_map`, enabling O(1) lookups. Each connection progresses through `want_read` / `want_write` states handled by `handle_accept`, `handle_read`, and `handle_write`.
 
----
+**Timers** — Two timer mechanisms run on each loop tick via `process_timers()`:
+- *Idle timeouts*: an intrusive `DList idle_queue` tracks last-active time per connection; connections at the head exceeding `MAX_IDLE_TIMEOUT` (5s) are closed.
+- *Key expiration*: a min-heap stores absolute expiry timestamps in milliseconds; keys at the top are deleted when their deadline has passed.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+MIT
