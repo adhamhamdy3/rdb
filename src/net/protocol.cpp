@@ -82,12 +82,8 @@ int32_t Protocol::deserialize_request(uint8_t const* request, uint32_t size, std
     return 0;
 }
 
-int32_t Protocol::deserialize_response(Buffer const& buffer)
+int32_t parse_response(uint8_t const* data, size_t size)
 {
-    uint32_t size = 0;
-    uint8_t const* data = buffer.data.data() + 4;
-    memcpy(&size, buffer.data.data(), 4);
-
     if (size < 1) {
         Logger::alert("bad response");
         return -1;
@@ -104,8 +100,43 @@ int32_t Protocol::deserialize_response(Buffer const& buffer)
         return Parser::parse_int(data, size);
     case TAG_DBL:
         return Parser::parse_dbl(data, size);
+    case TAG_ARR: {
+        if (size < 1 + 4) {
+            Logger::alert("bad response");
+            return -1;
+        }
+        uint32_t len = 0;
+        memcpy(&len, &data[1], 4);
+        printf("(arr) len=%u\n", len);
+
+        size_t arr_bytes = 1 + 4;
+        for (uint32_t i = 0; i < len; ++i) {
+            int32_t rv = parse_response(&data[arr_bytes], size - arr_bytes);
+            if (rv < 0) {
+                return rv;
+            }
+            arr_bytes += (size_t)rv;
+        }
+
+        printf("(arr) end\n");
+        return (int32_t)arr_bytes;
+    }
     default:
         Logger::alert("bad response");
         return -1;
     }
+}
+
+int32_t Protocol::deserialize_response(Buffer const& buffer)
+{
+    uint32_t size = 0;
+    uint8_t const* data = buffer.data.data() + 4;
+    memcpy(&size, buffer.data.data(), 4);
+
+    if (size < 1) {
+        Logger::alert("bad response");
+        return -1;
+    }
+
+    return parse_response(data, size);
 }
