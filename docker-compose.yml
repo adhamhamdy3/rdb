@@ -1,0 +1,13 @@
+services:
+  server:
+    build: .
+    ports:
+      - "1234:1234"
+    command: ./rdb --host 0.0.0.0 --port 1234
+
+  client:
+    build: .
+    depends_on:
+      - server
+    profiles: ["client"]
+    entrypoint: ["./client", "--host", "server", "--port", "1234"]

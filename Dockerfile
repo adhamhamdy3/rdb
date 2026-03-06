@@ -1,21 +1,15 @@
-FROM gcc:13 AS build
+FROM ubuntu:24.04
 
-WORKDIR /build
-
-COPY makefile .
-COPY include/ include/
-COPY lib/ lib/
-COPY src/ src/
-COPY redis_server.cpp .
-COPY redis_client.cpp .
-
-RUN make -j$(nproc)
-
-FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    make \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+COPY . .
 
-COPY --from=build /build/redis_server .
-COPY --from=build /build/redis_client .
+RUN make
 
-CMD ["./redis_server"]
+EXPOSE 1234
+
+CMD ["./rdb"]
