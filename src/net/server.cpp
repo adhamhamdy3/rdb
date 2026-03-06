@@ -23,7 +23,7 @@ connection_state* conn_new(Server& server, int connection_socket)
 
     // timers
     conn->last_active_ms = Timer::get_monotonic_msec();
-    dlist_insert_before(&server.idle_queue, &conn->idle_node);
+    dlist_insert_before(&server.db.idle_queue, &conn->idle_node);
 
     return conn;
 }
@@ -55,6 +55,10 @@ void process_command(std::vector<std::string> const& command, Buffer& buf, Datab
         do_zscore(command, buf, db);
     } else if (command.size() == 6 && command[0] == "zquery") {
         do_zquery(command, buf, db);
+    } else if (command.size() == 3 && command[0] == "pexpire") {
+        return do_expire(command, buf, db);
+    } else if (command.size() == 2 && command[0] == "pttl") {
+        return do_ttl(command, buf, db);
     } else {
         buf_out_err(buf, TAG_ERR, ERR_UNKNOWN, "unknown command.");
     }
@@ -246,7 +250,7 @@ void server_start_listen(Server& server)
 
     Logger::alert("server is listening...");
 
-    dlist_init(&server.idle_queue);
+    dlist_init(&server.db.idle_queue);
     event_loop(server);
 }
 

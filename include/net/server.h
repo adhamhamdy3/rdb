@@ -17,7 +17,6 @@
 #include "timer.h"
 
 // Storage
-#include "storage/core/list.h"
 #include "storage/rdb.h"
 
 /*
@@ -68,12 +67,6 @@ struct Server {
     std::vector<connection_state*> conn_state_map;
 
     std::vector<struct pollfd> sockets_list;
-
-    // timers for idle connections
-    DList idle_queue;
-
-    // timers for TTLs
-    Heap heap;
 
     Database db;
 };

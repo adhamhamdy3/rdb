@@ -1,4 +1,5 @@
 #include "storage/rdb.h"
+#include <net/timers.h>
 
 // FIXME:
 bool cb_keys(HNode* node, void* arg)
@@ -204,4 +205,52 @@ void do_zquery(std::vector<std::string> const& command, Buffer& buf, Database& d
     }
 
     buf_out_arr(buf, TAG_ARR, (uint32_t)n);
+}
+
+// pexpire key ttl_ms
+void do_expire(std::vector<std::string> const& command, Buffer& buf, Database& db)
+{
+    int64_t ttl_ms = 0;
+
+    if (!BufferUtil::str_to_int(command[2], ttl_ms)) {
+        return buf_out_err(buf, TAG_ERR, ERR_BAD_ARG, "expected integer number");
+    }
+
+    LookupKey lk;
+
+    lk.key = command[1];
+    lk.node.hcode = str_hash((uint8_t const*)lk.key.data(), lk.key.size());
+
+    HNode* hnode = hm_lookup(&db.hashmap, &lk.node, entry_eq);
+    if (hnode) {
+        Entry* entry = container_of(hnode, Entry, node);
+        entry_set_ttl(db, entry, ttl_ms);
+    }
+
+    return buf_out_int(buf, TAG_INT, hnode ? 1 : 0);
+}
+
+// pttl key
+void do_ttl(std::vector<std::string> const& command, Buffer& buf, Database& db)
+{
+    LookupKey lk;
+
+    lk.key = command[1];
+    lk.node.hcode = str_hash((uint8_t const*)lk.key.data(), lk.key.size());
+
+    HNode* hnode = hm_lookup(&db.hashmap, &lk.node, entry_eq);
+    if (!hnode) {
+        return buf_out_int(buf, TAG_INT, -2);
+    }
+
+    Entry* entry = container_of(hnode, Entry, node);
+
+    if (entry->heap_idx == (size_t)-1) {
+        return buf_out_int(buf, TAG_INT, -1);
+    }
+
+    uint64_t expire_at = db.heap.heap_arr[entry->heap_idx].value;
+    uint64_t now_ms = Timer::get_monotonic_msec();
+
+    return buf_out_int(buf, TAG_INT, expire_at > now_ms ? (expire_at - now_ms) : 0);
 }
