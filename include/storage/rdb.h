@@ -1,9 +1,9 @@
 #ifndef RDB_H
 #define RDB_H
 
+#include "core/hashtable.h"
+#include "core/heap.h"
 #include "entry.h"
-#include "hashtable.h"
-#include "heap.h"
 #include <vector>
 
 struct Database {
