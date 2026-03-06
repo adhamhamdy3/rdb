@@ -13,6 +13,8 @@
 
 // Utils
 #include "log/logger.h"
+#include "net/timers.h"
+#include "timer.h"
 
 // Storage
 #include "storage/rdb.h"
@@ -49,15 +51,11 @@ struct connection_state {
 
     Buffer incoming; // incoming data for the application logic to process
     Buffer outgoing; // outgoing data from the application logic to send
+
+    // timers
+    uint64_t last_active_ms = 0;
+    DList idle_node; // intrusive data-structure
 };
-
-void process_command(std::vector<std::string> const& command, Buffer& buf, Database& db);
-
-bool try_one_request(connection_state* conn, Database& db);
-
-connection_state* handle_accept(int tcp_socket);
-void handle_read(connection_state* conn, Database& db);
-void handle_write(connection_state* conn);
 
 struct Server {
     int socket;
@@ -77,5 +75,18 @@ void init_server_socket(Server& server);
 void init_server_address(Server& server, uint16_t port_number, uint32_t ip_address);
 void server_start_listen(Server& server);
 void event_loop(Server& server);
+
+connection_state* conn_new(Server& server, int connection_socket);
+void conn_destroy(Server& server, connection_state* conn);
+
+bool hnode_equal(HNode* l, HNode* r);
+
+void process_command(std::vector<std::string> const& command, Buffer& buf, Database& db);
+
+bool try_one_request(connection_state* conn, Database& db);
+
+connection_state* handle_accept(Server& server, int tcp_socket);
+void handle_read(connection_state* conn, Database& db);
+void handle_write(connection_state* conn);
 
 #endif

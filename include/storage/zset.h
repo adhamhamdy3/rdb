@@ -1,8 +1,8 @@
 #ifndef ZSET_H
 #define ZSET_H
 
-#include "avl.h"
-#include "hashtable.h"
+#include "core/avl.h"
+#include "core/hashtable.h"
 #include <algorithm>
 #include <stdlib.h>
 #include <string.h>

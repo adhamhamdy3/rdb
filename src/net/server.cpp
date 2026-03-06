@@ -9,6 +9,34 @@ void socket_set_nb(int socket)
     fcntl(socket, F_SETFL, flags);
 }
 
+bool hnode_equal(HNode* l, HNode* r)
+{
+    return l == r;
+}
+
+connection_state* conn_new(Server& server, int connection_socket)
+{
+    // create connection state for this socket
+    connection_state* conn = new connection_state();
+    conn->tcp_socket = connection_socket;
+    conn->want_read = true; // read the first request
+
+    // timers
+    conn->last_active_ms = Timer::get_monotonic_msec();
+    dlist_insert_before(&server.db.idle_queue, &conn->idle_node);
+
+    return conn;
+}
+
+void conn_destroy(Server& server, connection_state* conn)
+{
+    close(conn->tcp_socket);
+    server.conn_state_map[conn->tcp_socket] = nullptr;
+    dlist_detach(&conn->idle_node);
+
+    delete conn;
+}
+
 void process_command(std::vector<std::string> const& command, Buffer& buf, Database& db)
 {
     if (command.size() == 2 && command[0] == "get") {
@@ -27,6 +55,10 @@ void process_command(std::vector<std::string> const& command, Buffer& buf, Datab
         do_zscore(command, buf, db);
     } else if (command.size() == 6 && command[0] == "zquery") {
         do_zquery(command, buf, db);
+    } else if (command.size() == 3 && command[0] == "pexpire") {
+        return do_expire(command, buf, db);
+    } else if (command.size() == 2 && command[0] == "pttl") {
+        return do_ttl(command, buf, db);
     } else {
         buf_out_err(buf, TAG_ERR, ERR_UNKNOWN, "unknown command.");
     }
@@ -74,7 +106,7 @@ bool try_one_request(connection_state* conn, Database& db)
     return true;
 }
 
-connection_state* handle_accept(int tcp_socket)
+connection_state* handle_accept(Server& server, int tcp_socket)
 {
     struct sockaddr_in client_socket = {};
     socklen_t client_address = sizeof(client_socket);
@@ -92,10 +124,16 @@ connection_state* handle_accept(int tcp_socket)
     // set this connection socket to non-blocking
     socket_set_nb(connection_socket);
 
-    // create connection state for this socket
-    connection_state* conn = new connection_state();
-    conn->tcp_socket = connection_socket;
-    conn->want_read = true; // read the first request
+    connection_state* conn = conn_new(server, connection_socket);
+
+    if (conn) {
+        if (server.conn_state_map.size() <= (size_t)conn->tcp_socket) {
+            server.conn_state_map.resize(conn->tcp_socket + 1, nullptr);
+        }
+
+        assert(!server.conn_state_map[conn->tcp_socket]);
+        server.conn_state_map[conn->tcp_socket] = conn;
+    }
 
     return conn;
 }
@@ -104,6 +142,7 @@ connection_state* handle_accept(int tcp_socket)
 void handle_read(connection_state* conn, Database& db)
 {
     uint8_t buffer[64 * 1024];
+    // TODO: set timeout for read
     ssize_t ret_val = read(conn->tcp_socket, buffer, sizeof(buffer));
     if (ret_val < 0 && errno == EAGAIN) {
         return; // not ready
@@ -150,6 +189,7 @@ void handle_write(connection_state* conn)
 {
     assert(conn->outgoing.data.size() > 0);
 
+    // TODO: set timeout for write
     int ret_val = write(conn->tcp_socket, conn->outgoing.data.data(), conn->outgoing.data.size());
     if (ret_val < 0 && errno == EAGAIN) {
         return; // not ready
@@ -210,6 +250,7 @@ void server_start_listen(Server& server)
 
     Logger::alert("server is listening...");
 
+    dlist_init(&server.db.idle_queue);
     event_loop(server);
 }
 
@@ -241,8 +282,10 @@ void event_loop(Server& server)
             server.sockets_list.push_back(sock);
         }
 
-        /// blocking - check all sockets receive/send buffers or TCP errors
-        int ret_val = poll(server.sockets_list.data(), (nfds_t)server.sockets_list.size(), -1);
+        /// blocking - check all sockets receive/send buffers or TCP errors, -1 wait forever
+        /// timeout option: "wake me up in at most X milliseconds, even if no IO is ready."
+        int32_t timeout_ms = next_timer_ms(server);
+        int ret_val = poll(server.sockets_list.data(), (nfds_t)server.sockets_list.size(), timeout_ms);
         if (ret_val < 0 && errno == EINTR) { // nothing is ready rn
             continue;
         }
@@ -253,25 +296,20 @@ void event_loop(Server& server)
         if (server.sockets_list[0].revents & POLLIN) {
             int listening_socket = server.sockets_list[0].fd;
 
-            connection_state* conn = handle_accept(listening_socket);
-            if (conn) {
-                if (server.conn_state_map.size() <= (size_t)conn->tcp_socket) {
-                    server.conn_state_map.resize(conn->tcp_socket + 1, nullptr);
-                }
-
-                assert(!server.conn_state_map[conn->tcp_socket]);
-                server.conn_state_map[conn->tcp_socket] = conn;
-            }
+            connection_state* conn = handle_accept(server, listening_socket);
         }
 
         // handle connection socket
         for (size_t i = 1; i < server.sockets_list.size(); i++) {
             connection_state* conn = server.conn_state_map[server.sockets_list[i].fd];
+
             uint32_t revents = server.sockets_list[i].revents;
 
             if (revents == 0) {
-                continue;
+                continue; // no activity, don't reset timers
             }
+
+            reset_timers(server, conn); //  only reset on actual IO
 
             if (revents & POLLIN) {
                 assert(conn->want_read);
@@ -284,10 +322,10 @@ void event_loop(Server& server)
             }
 
             if ((revents & POLLERR) || conn->want_close) {
-                close(conn->tcp_socket);
-                server.conn_state_map[conn->tcp_socket] = nullptr;
-                delete conn;
+                conn_destroy(server, conn);
             }
         }
+
+        process_timers(server);
     }
 }
