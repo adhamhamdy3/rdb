@@ -5,7 +5,7 @@ COMMON_SRC := src/net/client.cpp src/net/server.cpp src/net/timers.cpp \
               src/storage/hashtable.cpp src/storage/rdb.cpp \
 			  src/net/protocol.cpp src/storage/buffer.cpp \
 			  src/storage/avl.cpp src/storage/zset.cpp \
-			  src/storage/list.cpp src/storage/heap.cpp
+			  src/storage/list.cpp src/storage/heap.cpp src/storage/entry.cpp
 
 all: redis_server redis_client
 
