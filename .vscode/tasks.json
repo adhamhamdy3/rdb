@@ -4,14 +4,14 @@
     {
       "label": "build server",
       "type": "shell",
-      "command": "make redis_server",
+      "command": "make rdb",
       "group": { "kind": "build", "isDefault": true },
       "problemMatcher": ["$gcc"]
     },
     {
       "label": "build client",
       "type": "shell",
-      "command": "make redis_client",
+      "command": "make client",
       "problemMatcher": ["$gcc"]
     }
   ]
