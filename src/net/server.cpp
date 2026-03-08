@@ -311,7 +311,7 @@ void event_loop(Server& server)
                 continue; // no activity, don't reset timers
             }
 
-            reset_timers(server, conn); //  only reset on actual IO
+            reset_timer(server, conn); //  only reset on actual IO
 
             if (revents & POLLIN) {
                 assert(conn->want_read);

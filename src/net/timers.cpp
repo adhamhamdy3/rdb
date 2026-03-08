@@ -28,7 +28,7 @@ int32_t next_timer_ms(Server& server)
     return int32_t(next_ms - now_ms);
 }
 
-void reset_timers(Server& server, connection_state* conn)
+void reset_timer(Server& server, connection_state* conn)
 {
     dlist_detach(&conn->idle_node);
     conn->last_active_ms = Timer::get_monotonic_msec();
